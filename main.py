@@ -598,37 +598,49 @@ class FineAPIQQBot(Star):
 
         window_minutes = max(5, int(self._cfg("model_status.window_minutes", 60) or 60))
         max_pages = max(1, int(self._cfg("model_status.max_pages", 10) or 10))
+        max_fetch_seconds = max(1, int(self._cfg("model_status.max_fetch_seconds", 12) or 12))
         min_calls = max(1, int(self._cfg("model_status.min_calls", 5) or 5))
         top_n = max(1, int(self._cfg("model_status.top_n", 10) or 10))
         end_ts = int(now)
         start_ts = end_ts - window_minutes * 60
+        deadline = time.monotonic() + max_fetch_seconds
 
-        try:
-            success_logs, _success_total = await self._fetch_log_pages(
-                2, start_ts, end_ts, max_pages
-            )
-            error_logs, error_total = await self._fetch_log_pages(
-                5, start_ts, end_ts, max_pages
-            )
-        except NewAPIError as exc:
-            hint = "（模型状态需要 PAT 的 log:read 权限）" if exc.status == 403 else ""
-            yield event.plain_result(f"查询模型状态失败：{exc.message}{hint}")
-            event.stop_event()
-            return
-        except Exception:
-            logger.exception("[fineapi] 拉取模型状态日志异常")
-            yield event.plain_result("查询模型状态失败：拉取日志时出现异常。")
-            event.stop_event()
-            return
+        # 成功日志、错误日志、模型价格表并发拉取；总耗时受 max_fetch_seconds 限制。
+        success_result, error_result, pricing_result = await asyncio.gather(
+            self._fetch_log_pages(2, start_ts, end_ts, max_pages, deadline),
+            self._fetch_log_pages(5, start_ts, end_ts, max_pages, deadline),
+            self.client.get_pricing(),
+            return_exceptions=True,
+        )
+        for result in (success_result, error_result):
+            if isinstance(result, NewAPIError):
+                hint = (
+                    "（模型状态需要 PAT 的 log:read 权限）"
+                    if result.status == 403
+                    else ""
+                )
+                yield event.plain_result(f"查询模型状态失败：{result.message}{hint}")
+                event.stop_event()
+                return
+            if isinstance(result, Exception):
+                logger.error("[fineapi] 拉取模型状态日志异常：%s", result)
+                yield event.plain_result("查询模型状态失败：拉取日志时出现异常。")
+                event.stop_event()
+                return
+
+        success_logs, _success_total = success_result
+        error_logs, error_total = error_result
 
         model_names: list[str] = []
-        try:
-            for item in await self.client.get_pricing():
-                name = str(item.get("model_name") or "").strip()
-                if name:
-                    model_names.append(name)
-        except Exception as exc:
-            logger.info("[fineapi] 读取模型价格表失败（忽略）：%s", exc)
+        pricing: list[dict[str, Any]] = []
+        if isinstance(pricing_result, Exception):
+            logger.info("[fineapi] 读取模型价格表失败（忽略）：%s", pricing_result)
+        elif isinstance(pricing_result, list):
+            pricing = pricing_result
+        for item in pricing:
+            name = str(item.get("model_name") or "").strip()
+            if name:
+                model_names.append(name)
         for item in success_logs + error_logs:
             if isinstance(item, dict):
                 name = str(item.get("model_name") or "").strip()
@@ -686,18 +698,35 @@ class FineAPIQQBot(Star):
         event.stop_event()
 
     async def _fetch_log_pages(
-        self, log_type: int, start_ts: int, end_ts: int, max_pages: int
+        self,
+        log_type: int,
+        start_ts: int,
+        end_ts: int,
+        max_pages: int,
+        deadline: float | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         items: list[dict[str, Any]] = []
         total = 0
         page_size = 100
         for page in range(1, max_pages + 1):
+            remaining: float | None = None
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    logger.info(
+                        "[fineapi] 模型状态日志拉取超过时间预算，type=%s 停在 %s 页",
+                        log_type,
+                        page - 1,
+                    )
+                    break
             payload = await self.client.get_logs(
                 log_type=log_type,
                 start_timestamp=start_ts,
                 end_timestamp=end_ts,
                 page=page,
                 page_size=page_size,
+                retries=0 if remaining is not None else 1,
+                timeout_seconds=remaining,
             )
             page_items = payload.get("items") or []
             if isinstance(page_items, list):

@@ -58,7 +58,7 @@ class NewAPIClient:
             "Authorization": f"Bearer {self.access_token}",
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "fineapi-qqbot/0.4.2 (AstrBot)",
+            "User-Agent": "fineapi-qqbot/0.4.3 (AstrBot)",
         }
         # 仅旧版 NewAPI 需要；rc50 可填 0 不发送。
         if self.admin_user_id > 0:
@@ -85,6 +85,7 @@ class NewAPIClient:
         *,
         params: dict[str, Any] | None = None,
         retries: int = 2,
+        timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
         if not self.base_url:
             raise NewAPIError("插件未配置站点地址（site.base_url）")
@@ -97,13 +98,19 @@ class NewAPIClient:
         for attempt in range(retries + 1):
             try:
                 session = await self._get_session()
-                async with session.request(
-                    method,
-                    url,
-                    params=params,
-                    json=payload,
-                    headers=self._headers(),
-                ) as resp:
+                request_timeout = None
+                if timeout_seconds is not None:
+                    request_timeout = aiohttp.ClientTimeout(
+                        total=max(1.0, float(timeout_seconds))
+                    )
+                request_kwargs: dict[str, Any] = {
+                    "params": params,
+                    "json": payload,
+                    "headers": self._headers(),
+                }
+                if request_timeout is not None:
+                    request_kwargs["timeout"] = request_timeout
+                async with session.request(method, url, **request_kwargs) as resp:
                     text = await resp.text()
                     content_type = (resp.headers.get("Content-Type") or "").lower()
 
@@ -181,6 +188,8 @@ class NewAPIClient:
         page: int = 1,
         page_size: int = 100,
         model_name: str | None = None,
+        retries: int = 1,
+        timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
         """读取 Dashboard 日志（需要 log:read）。
 
@@ -199,7 +208,13 @@ class NewAPIClient:
         if model_name:
             params["model_name"] = str(model_name)
 
-        data = await self._request("GET", "/api/log/", params=params)
+        data = await self._request(
+            "GET",
+            "/api/log/",
+            params=params,
+            retries=retries,
+            timeout_seconds=timeout_seconds,
+        )
         payload = data.get("data")
         if not isinstance(payload, dict):
             raise NewAPIError("站点未返回日志数据")

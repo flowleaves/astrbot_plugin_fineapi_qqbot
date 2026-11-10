@@ -2,7 +2,7 @@
 
 AstrBot 插件：在 QQ 群/私聊绑定星芽（`xingya.site`）账号、查询余额、首次绑定赠送额度。
 
-> 当前版本：**0.4.2**（MVP + 模型状态图片 + 芽点抽奖 @ 中奖者 + 老用户注册礼静默过滤）。适配 QQ 官方机器人、QQ 官方 Webhook 和 OneBot v11（aiocqhttp）。
+> 当前版本：**0.4.3**（MVP + 模型状态图片 + 芽点抽奖 @ 中奖者 + 老用户注册礼静默过滤）。适配 QQ 官方机器人、QQ 官方 Webhook 和 OneBot v11（aiocqhttp）。
 
 ## 功能
 
@@ -143,8 +143,13 @@ pip install -r astrbot_plugin_fineapi_qqbot/requirements.txt
 - 少于 **5 次**调用显示“数据不足”；
 - 模糊匹配多个模型时按调用量降序显示前 **10** 个；
 - 默认输出文转图图片；文转图失败自动回退 Markdown 文本；
+- 成功日志、错误日志、模型价格表**并发拉取**，总耗时受 `model_status.max_fetch_seconds` 限制（默认 12 秒）；
 - 需要 PAT 具备 `log:read`，并建议站点开启 `ERROR_LOG_ENABLED=true`；
 - 结果缓存默认 60 秒。
+
+> 如果日志里出现 `t2i.network_strategy: Endpoint https://t2i.soulter.top/text2img failed: HTTP 500`，
+> 这是 AstrBot 默认的公共文转图服务不可用，AstrBot 会自动尝试下一个渲染端点；
+> 不是插件报错。可在 AstrBot「配置 → 文转图」里调整或移除失效端点。
 
 #### 文转图模板
 
@@ -219,7 +224,8 @@ python -m py_compile main.py
 - 模型状态依赖 PAT 的 `log:read`；建议站点开启 `ERROR_LOG_ENABLED=true`，
   否则错误日志为空，正确率可能偏高，图片标题会提示确认该变量。
 - 成功/错误日志默认各最多分析最新 1000 条（`model_status.max_pages` 可调），
-  调用量很大时正确率为样本统计。
+  调用量很大时正确率为样本统计；总拉取时间超过 `model_status.max_fetch_seconds`
+  时使用已拉到的数据继续统计，避免命令长时间无响应。
 - 站点若开启 Cloudflare WAF，请确保机器人出口 IP 不被拦截。
 
 ## 文档
