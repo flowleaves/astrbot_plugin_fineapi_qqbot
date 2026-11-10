@@ -93,6 +93,7 @@ GIFT_STATE_LABELS = {
     "granted": "已发放",
     "failed": "发放失败",
     "unknown": "状态待核对",
+    "skipped": "不发放（老用户）",
 }
 
 
@@ -239,6 +240,17 @@ class FineAPIQQBot(Star):
             cutoff = now - 3600
             self._last_query = {k: v for k, v in self._last_query.items() if v >= cutoff}
         return True, 0
+
+    def _gift_new_user_id_after(self) -> int:
+        try:
+            value = int(self._cfg("gift.new_user_id_after", 8352) or 0)
+        except (TypeError, ValueError):
+            value = 8352
+        return max(0, value)
+
+    def _is_old_gift_user(self, user_id: int) -> bool:
+        threshold = self._gift_new_user_id_after()
+        return threshold > 0 and int(user_id) <= threshold
 
     def _quota_per_unit(self) -> int:
         try:
@@ -1338,6 +1350,21 @@ class FineAPIQQBot(Star):
         binding = await self.store.get_binding(qq)
         if not binding:
             return "找不到绑定记录，请先绑定。"
+
+        if not force and str(binding.get("gift_state") or "none") == "granted":
+            return "🎁 首绑礼已经领取过了。"
+
+        # 老用户（ID <= 阈值）不发放注册礼；管理员 force 可人工补发。
+        if not force and self._is_old_gift_user(int(user_id)):
+            threshold = self._gift_new_user_id_after()
+            if str(binding.get("gift_state") or "none") != "skipped":
+                await self.store.set_gift_state(
+                    qq, "skipped", quota=0, reason=f"old_user<={threshold}"
+                )
+            return (
+                f"🎁 首绑礼：该账号为老用户（ID {int(user_id)} ≤ {threshold}），"
+                "不发放注册礼。"
+            )
 
         try:
             amount_usd = float(self._cfg("gift.amount_usd", 1.0) or 0)

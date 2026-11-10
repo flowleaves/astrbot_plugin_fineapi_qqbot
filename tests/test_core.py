@@ -86,6 +86,11 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(binding["gift_state"], "granted")
         self.assertIsNotNone(binding["gift_at"])
 
+        await self.store.set_gift_state("10001", "skipped", quota=0, reason="old_user")
+        binding = await self.store.get_binding("10001")
+        self.assertEqual(binding["gift_state"], "skipped")
+        self.assertEqual(binding["gift_quota"], 0)
+
     async def test_stale_pending_becomes_unknown(self):
         await self.store.create_binding("10001", 123, "alice")
         await self.store.set_gift_state("10001", "pending", quota=500000)

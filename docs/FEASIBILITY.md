@@ -19,7 +19,7 @@
 > 因此本报告的 MVP 范围已收敛为：**绑定 / 余额 / 首绑礼 / 帮助**，
 > 模型状态排在其后；签到相关章节仅作后续参考。
 >
-> 当前进度：MVP + 模型状态 + 芽点抽奖已落地，版本 `0.3.0`；仓库根目录即插件目录。
+> 当前进度：MVP + 模型状态 + 芽点抽奖已落地，版本 `0.3.1`；仓库根目录即插件目录。
 
 ---
 
@@ -241,6 +241,15 @@
 - **已确认：发到普通余额**，不是签到钱包；立即可用、不过期。
 - 会写入 `LogTypeTopup` 与操作审计日志（操作者 = 机器人用的管理员账号）。
 - 不能给同级或更高角色加额度；目标不存在/超额会报错。
+
+**老用户过滤（2026-11-10 新增）**：
+
+- 配置 `gift.new_user_id_after`，默认 `8352`；
+- 只有 `newapi_user_id > 阈值` 的新用户才发放；
+- `newapi_user_id <= 阈值` 视为老用户，`/绑定` 和 `/领取首绑礼` 都不发放，
+  本地标记 `gift_state='skipped'`；
+- 管理员 `/补发首绑礼 <平台用户ID> force` 可人工覆盖；
+- 阈值填 `0` 表示不限制。
 
 **幂等设计（最容易翻车的点）**：
 
@@ -465,7 +474,7 @@ display_name: 星芽助手
 short_desc: 绑定星芽账号、查余额、领首绑礼、看模型状态、芽点抽奖
 desc: 在 QQ 群/私聊绑定星芽（xingya.site）账号，查询余额与近 30 分钟模型状态，参与芽点抽奖
 help: 发送 /芽点帮助 查看命令
-version: 0.3.0
+version: 0.3.1
 author: fineapi
 astrbot_version: ">=4.9.2,<5"
 support_platforms:
@@ -635,7 +644,8 @@ func BotClaimCheckin(c *gin.Context) {
   },
   "gift": {
     "enabled": true,
-    "amount_usd": 1.0
+    "amount_usd": 1.0,
+    "new_user_id_after": 8352
   },
   "lottery": {
     "enabled": true,
@@ -680,7 +690,7 @@ CREATE TABLE IF NOT EXISTS bindings (
   newapi_user_id  INTEGER NOT NULL UNIQUE,
   username        TEXT NOT NULL,
   bound_at        INTEGER NOT NULL,
-  gift_state      TEXT NOT NULL DEFAULT 'none',  -- none|pending|granted|failed|unknown
+  gift_state      TEXT NOT NULL DEFAULT 'none',  -- none|pending|granted|failed|unknown|skipped
   gift_quota      INTEGER NOT NULL DEFAULT 0,
   gift_at         INTEGER,
   gift_reason     TEXT,
@@ -804,6 +814,9 @@ MVP（M0–M2）代码已落地；剩余是真机联调和发布。
 - [ ] 同一 QQ、同一星芽用户均不能重复绑定
 - [ ] `/余额` 数字与站内后台一致（quota / USD / 芽点换算正确）
 - [ ] 首绑礼只发一次；杀掉插件重启不会重复发
+- [ ] ID ≤ `gift.new_user_id_after` 的老用户不发放，标记 `skipped`
+- [ ] ID > 阈值的新用户正常发放；`/领取首绑礼` 同样按阈值判断
+- [ ] 管理员 `/补发首绑礼 <平台用户ID> force` 可人工覆盖老用户限制
 - [ ] 明确失败时标记 `failed`，`/领取首绑礼` 可重试
 - [ ] 超时/无响应时标记 `unknown`，不自动重试，管理员可 `force` 补发
 - [ ] `/解绑` 后本地记录删除，站点账号不受影响

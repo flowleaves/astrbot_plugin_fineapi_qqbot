@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS lottery_winners (
 );
 """
 
-GIFT_STATES = {"none", "pending", "granted", "failed", "unknown"}
+GIFT_STATES = {"none", "pending", "granted", "failed", "unknown", "skipped"}
 
 
 class Store:

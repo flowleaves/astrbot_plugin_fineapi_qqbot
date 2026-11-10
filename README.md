@@ -2,7 +2,7 @@
 
 AstrBot 插件：在 QQ 群/私聊绑定星芽（`xingya.site`）账号、查询余额、首次绑定赠送额度。
 
-> 当前版本：**0.3.0**（MVP + 模型状态 + 芽点抽奖）。适配 QQ 官方机器人、QQ 官方 Webhook 和 OneBot v11（aiocqhttp）。
+> 当前版本：**0.3.1**（MVP + 模型状态 + 芽点抽奖 + 老用户注册礼过滤）。适配 QQ 官方机器人、QQ 官方 Webhook 和 OneBot v11（aiocqhttp）。
 
 ## 功能
 
@@ -40,6 +40,9 @@ AstrBot 插件：在 QQ 群/私聊绑定星芽（`xingya.site`）账号、查询
 > 可以用 `/我的ID` 直接查看当前会话的平台用户 ID 和群 ID。
 
 - 首绑礼默认 **$1**（后台可调），发到**普通余额**；`$1 = 100 芽点 = 500000 quota`。
+- 只有 **Star 用户 ID 大于 `gift.new_user_id_after`（默认 8352）** 的新用户才发放；
+  ID ≤ 阈值视为老用户，`/绑定` 和 `/领取首绑礼` 都不会发放。
+  管理员可用 `/补发首绑礼 <平台用户ID> force` 人工覆盖。
 - 模型状态：统计近 30 分钟错误日志，**排除 400-499 客户端错误**，
   同一用户的重复错误只算 1 个用户；多个用户报错才判定异常。
 - 不保存用户密码、令牌或聊天内容。
@@ -102,6 +105,7 @@ pip install -r astrbot_plugin_fineapi_qqbot/requirements.txt
 | `site.admin_user_id` | rc50 填 `0`；旧版 NewAPI 填管理员用户 ID |
 | `gift.enabled` | 是否开启首绑礼 |
 | `gift.amount_usd` | 赠送金额，默认 `1.0` |
+| `gift.new_user_id_after` | 新用户起始 ID，默认 `8352`；`ID > 该值` 才发放 |
 | `binding.allow_group` / `allow_private` | 允许群聊/私聊绑定 |
 | `access.whitelist_groups` | 群白名单（官方机器人为 `group_openid`），留空表示所有群 |
 | `access.admin_qqs` | 额外插件管理员平台用户 ID（官方机器人为 OpenID，不是 QQ 号） |
@@ -172,7 +176,7 @@ pip install -r astrbot_plugin_fineapi_qqbot/requirements.txt
   `gift_grants`（发放台账，解绑/重绑后仍然保留）、
   `lotteries` / `lottery_entries` / `lottery_winners`（抽奖、参与、中奖发放记录）
 - 首次发放前写入 `pending`，成功后 `granted`；失败为 `failed`；
-  请求超时等无法确认结果时标记 `unknown`，需要管理员核对后
+  老用户不发放时标记 `skipped`；请求超时等无法确认结果时标记 `unknown`，需要管理员核对后
   `/补发首绑礼 <平台用户ID> force`。
 - `gift_grants` 对平台用户 ID 和星芽用户 ID 都做了唯一约束：
   **解绑再绑、换号重绑都不会重复发放首绑礼**。
