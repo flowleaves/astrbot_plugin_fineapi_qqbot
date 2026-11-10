@@ -399,6 +399,27 @@ def render(analysis: Analysis, *, now: int | None = None, show_ok: bool = False)
 # 1 小时总体正确率（/<模型>状态）
 # ---------------------------------------------------------------------------
 
+_STATUS_QUERY_RE = re.compile(r"/?\s*([^\s/]+?)\s*状态")
+
+
+def extract_status_query(message: str) -> str | None:
+    """从消息里提取「<模型>状态」的模型查询词。
+
+    AstrBot 会在唤醒检查阶段去掉 wake_prefix（默认 `/`），所以真实事件里的
+    ``message_str`` 通常是 ``claude状态``；这里同时兼容仍带 `/` 的情况。
+
+    Args:
+        message: 事件的消息文本。
+
+    Returns:
+        查询词；不符合 ``<模型>状态`` 格式时返回 None。
+    """
+    match = _STATUS_QUERY_RE.fullmatch(str(message or "").strip())
+    if not match:
+        return None
+    return str(match.group(1) or "").strip() or None
+
+
 HOUR_LABELS = {
     "ok": "稳定",
     "warn": "波动",

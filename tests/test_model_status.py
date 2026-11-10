@@ -13,6 +13,7 @@ from fineapi_core.model_status import (
     analyze_hour,
     build_status_text,
     extract_status_code,
+    extract_status_query,
     parse_other,
     render,
 )
@@ -238,6 +239,23 @@ class HourStatusTest(unittest.TestCase):
         meta = json.loads(comment)
         self.assertEqual(meta["models"][0]["name"], "model-a")
         self.assertEqual(len(meta["models"][0]["segments"]), 30)
+
+
+class StatusQueryTest(unittest.TestCase):
+    def test_extract_without_wake_prefix(self):
+        # AstrBot 唤醒阶段会去掉开头的 /
+        self.assertEqual(extract_status_query("claude状态"), "claude")
+        self.assertEqual(extract_status_query("模型状态"), "模型")
+        self.assertEqual(extract_status_query("gpt-4o状态"), "gpt-4o")
+
+    def test_extract_with_wake_prefix(self):
+        self.assertEqual(extract_status_query("/claude状态"), "claude")
+        self.assertEqual(extract_status_query("/模型状态"), "模型")
+
+    def test_extract_ignores_other_text(self):
+        self.assertIsNone(extract_status_query(""))
+        self.assertIsNone(extract_status_query("/绑定 alice 123"))
+        self.assertIsNone(extract_status_query("/状态"))
 
 
 if __name__ == "__main__":

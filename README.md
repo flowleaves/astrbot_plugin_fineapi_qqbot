@@ -2,7 +2,7 @@
 
 AstrBot 插件：在 QQ 群/私聊绑定星芽（`xingya.site`）账号、查询余额、首次绑定赠送额度。
 
-> 当前版本：**0.4.1**（MVP + 模型状态图片 + 芽点抽奖 @ 中奖者 + 老用户注册礼静默过滤）。适配 QQ 官方机器人、QQ 官方 Webhook 和 OneBot v11（aiocqhttp）。
+> 当前版本：**0.4.2**（MVP + 模型状态图片 + 芽点抽奖 @ 中奖者 + 老用户注册礼静默过滤）。适配 QQ 官方机器人、QQ 官方 Webhook 和 OneBot v11（aiocqhttp）。
 
 ## 功能
 
@@ -134,6 +134,7 @@ pip install -r astrbot_plugin_fineapi_qqbot/requirements.txt
 ### 模型状态说明
 
 - 命令：`/<模型>状态`，支持模糊匹配，例如 `/claude状态`、`/gpt状态`；
+- AstrBot 会先去掉唤醒前缀 `/` 再交给插件，所以 `claude状态`、`gpt状态` 同样可用；
 - `/模型状态`：全部模型近 1 小时调用量 Top 10；
 - 数据源：`GET /api/log/?type=2`（成功调用）+ `type=5`（错误），默认近 60 分钟；
 - 排除 `400-499` 客户端错误；

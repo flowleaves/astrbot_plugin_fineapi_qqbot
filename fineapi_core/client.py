@@ -58,7 +58,7 @@ class NewAPIClient:
             "Authorization": f"Bearer {self.access_token}",
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "fineapi-qqbot/0.4.1 (AstrBot)",
+            "User-Agent": "fineapi-qqbot/0.4.2 (AstrBot)",
         }
         # 仅旧版 NewAPI 需要；rc50 可填 0 不发送。
         if self.admin_user_id > 0:

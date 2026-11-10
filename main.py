@@ -51,7 +51,11 @@ try:
         pick_winners,
         split_prize,
     )
-    from .fineapi_core.model_status import analyze_hour, build_status_text
+    from .fineapi_core.model_status import (
+        analyze_hour,
+        build_status_text,
+        extract_status_query,
+    )
     from .fineapi_core.quota import (
         format_quota,
         format_usd,
@@ -70,7 +74,11 @@ except ImportError:  # pragma: no cover
         pick_winners,
         split_prize,
     )
-    from fineapi_core.model_status import analyze_hour, build_status_text
+    from fineapi_core.model_status import (
+        analyze_hour,
+        build_status_text,
+        extract_status_query,
+    )
     from fineapi_core.quota import (
         format_quota,
         format_usd,
@@ -558,11 +566,12 @@ class FineAPIQQBot(Star):
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def model_status_listener(self, event: AstrMessageEvent):
         """处理 /<模型>状态 与 /模型状态。"""
+        # AstrBot 在唤醒检查阶段会先去掉 wake_prefix（默认 /），到这里
+        # message_str 通常是 "claude状态"；这里同时兼容仍带 / 的情况。
         raw = str(getattr(event, "message_str", "") or "").strip()
-        match = re.search(r"/\s*([^\s/]+?)状态$", raw)
-        if not match:
+        if not getattr(event, "is_at_or_wake_command", True):
             return
-        query = str(match.group(1) or "").strip()
+        query = extract_status_query(raw)
         if not query or not self._allowed(event):
             return
         if not bool(self._cfg("model_status.enabled", True)):
