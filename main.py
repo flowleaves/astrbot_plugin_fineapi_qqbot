@@ -1331,8 +1331,15 @@ class FineAPIQQBot(Star):
                 yield event.plain_result(f"平台用户 {target} 没有绑定记录。")
                 return
             force_flag = str(force or "").strip().lower() in {"force", "强制", "1", "true"}
+            uid = int(binding["newapi_user_id"])
+            if not force_flag and self._is_old_gift_user(uid):
+                yield event.plain_result(
+                    f"该账号为老用户（ID {uid} ≤ {self._gift_new_user_id_after()}），"
+                    "默认不发放；确需补发请加 force。"
+                )
+                return
             text = await self._try_gift(
-                target, int(binding["newapi_user_id"]), force=force_flag, reason="manual"
+                target, uid, force=force_flag, reason="manual"
             )
             yield event.plain_result(text or "未执行发放。")
         except Exception:
@@ -1354,17 +1361,15 @@ class FineAPIQQBot(Star):
         if not force and str(binding.get("gift_state") or "none") == "granted":
             return "🎁 首绑礼已经领取过了。"
 
-        # 老用户（ID <= 阈值）不发放注册礼；管理员 force 可人工补发。
+        # 老用户（ID <= 阈值）不发放注册礼，也不对用户提示；
+        # 仍然记录 skipped 便于管理员查询。管理员 force 可人工补发。
         if not force and self._is_old_gift_user(int(user_id)):
             threshold = self._gift_new_user_id_after()
             if str(binding.get("gift_state") or "none") != "skipped":
                 await self.store.set_gift_state(
                     qq, "skipped", quota=0, reason=f"old_user<={threshold}"
                 )
-            return (
-                f"🎁 首绑礼：该账号为老用户（ID {int(user_id)} ≤ {threshold}），"
-                "不发放注册礼。"
-            )
+            return ""
 
         try:
             amount_usd = float(self._cfg("gift.amount_usd", 1.0) or 0)
