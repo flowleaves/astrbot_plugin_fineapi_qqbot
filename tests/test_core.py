@@ -143,9 +143,11 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
     async def test_lottery_flow(self):
         now = 1_700_000_000
         lottery_id, error = await self.store.create_lottery(
-            "umo:test", "测试抽奖", 10, 1, now + 60, "admin"
+            "umo:test", "测试抽奖", 10, 1, now + 60, "admin", group_id="20002"
         )
         self.assertTrue(lottery_id, error)
+        lottery = await self.store.get_lottery(lottery_id)
+        self.assertEqual(lottery["group_id"], "20002")
 
         duplicate, error = await self.store.create_lottery(
             "umo:test", "重复", 10, 1, now + 60, "admin"

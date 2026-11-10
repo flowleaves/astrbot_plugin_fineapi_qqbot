@@ -91,6 +91,14 @@
         "type": "bool",
         "default": true
       },
+      "winner_display": {
+        "description": "开奖名单显示方式",
+        "type": "string",
+        "default": "at",
+        "options": ["at", "id"],
+        "labels": ["@绑定的 QQ", "星芽用户 ID"],
+        "hint": "at：群聊里 @ 中奖者；私聊或 @ 失败自动回退为用户 ID。id：只显示用户 #ID"
+      },
       "default_duration_minutes": {
         "description": "默认开奖时长（分钟）",
         "type": "int",

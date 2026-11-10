@@ -736,20 +736,18 @@ class FineAPIQQBot(Star):
                     winners = await self.store.list_lottery_winners(
                         int(latest[0]["id"])
                     )
-                    yield event.plain_result(
-                        "当前没有进行中的抽奖。\n\n"
-                        + self._lottery_result_text(
-                            latest[0], winners, entries_count=0, eligible_count=0
-                        )
-                    )
+                    yield event.plain_result("当前没有进行中的抽奖。")
+                    yield self._lottery_history_result(event, latest[0], winners)
                 else:
                     yield event.plain_result("当前没有进行中的抽奖。")
                 return
 
             now = int(time.time())
             if int(lottery["draw_at"]) <= now:
-                text = await self._draw_lottery(lottery, announce=False)
-                yield event.plain_result(text)
+                text, sent = await self._draw_lottery(lottery, announce=True)
+                yield event.plain_result(
+                    "✅ 抽奖已开奖，结果已发送。" if sent else text
+                )
                 return
 
             binding = await self.store.get_binding(qq)
@@ -809,19 +807,16 @@ class FineAPIQQBot(Star):
                 )
                 if latest:
                     winners = await self.store.list_lottery_winners(int(latest[0]["id"]))
-                    yield event.plain_result(
-                        "当前没有进行中的抽奖。\n\n"
-                        + self._lottery_result_text(
-                            latest[0], winners, entries_count=0, eligible_count=0
-                        )
-                    )
+                    yield event.plain_result("当前没有进行中的抽奖。")
+                    yield self._lottery_history_result(event, latest[0], winners)
                 else:
                     yield event.plain_result("当前没有进行中的抽奖。")
                 return
 
             if int(lottery["draw_at"]) <= int(time.time()):
+                text, sent = await self._draw_lottery(lottery, announce=True)
                 yield event.plain_result(
-                    await self._draw_lottery(lottery, announce=False)
+                    "✅ 抽奖已开奖，结果已发送。" if sent else text
                 )
                 return
 
@@ -892,6 +887,7 @@ class FineAPIQQBot(Star):
                 winners,
                 draw_at,
                 str(event.get_sender_id()).strip(),
+                group_id=str(event.get_group_id() or ""),
             )
             if error == "open_exists":
                 yield event.plain_result("当前会话已有进行中的抽奖。")
@@ -933,10 +929,9 @@ class FineAPIQQBot(Star):
             if str(lottery.get("status")) != "open":
                 yield event.plain_result("该抽奖已经结束。")
                 return
-            same_session = str(lottery.get("umo") or "") == umo
-            text = await self._draw_lottery(lottery, announce=not same_session)
+            text, sent = await self._draw_lottery(lottery, announce=True)
             yield event.plain_result(
-                text if same_session else "已开奖，结果已发送到抽奖会话。\n\n" + text
+                "✅ 开奖完成，结果已发送。" if sent else text
             )
         except Exception:
             logger.exception("[fineapi] 手动开奖异常")
@@ -1035,12 +1030,12 @@ class FineAPIQQBot(Star):
             for row in pending:
                 if str(row["state"]) == "unknown":
                     lines.append(
-                        f"⚠️ {row['username']} 状态未知，可能已到账；仍尝试补发"
+                        f"⚠️ 用户 #{row['newapi_user_id']} 状态未知，可能已到账；仍尝试补发"
                     )
                 await self._award_lottery_winner(int(lottery["id"]), row)
                 suffix = "✅ 已到账" if row.get("state") == "granted" else "⚠️ 仍失败"
                 lines.append(
-                    f"{suffix}：{row['username']} — "
+                    f"{suffix}：用户 #{row['newapi_user_id']} — "
                     f"{self._fmt_yadian_amount(quota_to_yadian(int(row['quota']), self._quota_per_unit()))}"
                 )
             yield event.plain_result("\n".join(lines))
@@ -1147,12 +1142,12 @@ class FineAPIQQBot(Star):
 
     async def _draw_lottery(
         self, lottery: dict[str, Any], *, announce: bool = True
-    ) -> str:
+    ) -> tuple[str, bool]:
         lottery_id = int(lottery["id"])
         async with self._lottery_lock:
             fresh = await self.store.get_lottery(lottery_id)
             if not fresh or str(fresh.get("status")) != "open":
-                return "该抽奖已经结束。"
+                return "该抽奖已经结束。", False
 
             entries = await self.store.list_lottery_entries(lottery_id)
             eligible: list[dict[str, Any]] = []
@@ -1173,7 +1168,7 @@ class FineAPIQQBot(Star):
                 try:
                     shares = split_prize(total_quota, len(selected))
                 except ValueError as exc:
-                    return f"开奖失败：{exc}"
+                    return f"开奖失败：{exc}", False
 
             winner_rows: list[dict[str, Any]] = []
             for entry, quota in zip(selected, shares):
@@ -1188,7 +1183,7 @@ class FineAPIQQBot(Star):
                 )
 
             if not await self.store.finalize_lottery(lottery_id, winner_rows):
-                return "该抽奖已被处理。"
+                return "该抽奖已被处理。", False
 
             for row in winner_rows:
                 await self._award_lottery_winner(lottery_id, row)
@@ -1199,9 +1194,16 @@ class FineAPIQQBot(Star):
                 entries_count=len(entries),
                 eligible_count=len(eligible),
             )
-            if announce and fresh.get("umo"):
-                await self._send_text(str(fresh["umo"]), text)
-            return text
+            sent = False
+            if announce:
+                sent = await self._send_lottery_result(
+                    fresh,
+                    winner_rows,
+                    text,
+                    entries_count=len(entries),
+                    eligible_count=len(eligible),
+                )
+            return text, sent
 
     async def _award_lottery_winner(
         self, lottery_id: int, row: dict[str, Any]
@@ -1241,6 +1243,27 @@ class FineAPIQQBot(Star):
             )
             row["state"] = "granted"
 
+    def _lottery_result_header(
+        self,
+        lottery: dict[str, Any],
+        *,
+        entries_count: int,
+        eligible_count: int,
+    ) -> list[str]:
+        lines = [
+            f"🎉 抽奖开奖 #{lottery['id']}",
+            f"📝 {self._lottery_title(lottery)}",
+            f"🎁 奖品：{self._fmt_yadian_amount(lottery['prize_yadian'])}",
+        ]
+        if entries_count:
+            lines.append(f"👥 参与 {entries_count} 人，符合条件 {eligible_count} 人")
+        return lines
+
+    @staticmethod
+    def _lottery_winner_prefix(index: int) -> str:
+        medals = ["🥇", "🥈", "🥉"]
+        return medals[index] if index < len(medals) else "•"
+
     def _lottery_result_text(
         self,
         lottery: dict[str, Any],
@@ -1249,21 +1272,17 @@ class FineAPIQQBot(Star):
         entries_count: int,
         eligible_count: int,
     ) -> str:
-        lines = [
-            f"🎉 抽奖开奖 #{lottery['id']}",
-            f"📝 {self._lottery_title(lottery)}",
-            f"🎁 奖品：{self._fmt_yadian_amount(lottery['prize_yadian'])}",
-        ]
-        if entries_count:
-            lines.append(f"👥 参与 {entries_count} 人，符合条件 {eligible_count} 人")
+        lines = self._lottery_result_header(
+            lottery,
+            entries_count=entries_count,
+            eligible_count=eligible_count,
+        )
         if not winners:
             lines.append("😢 本次流局：没有符合条件的参与者。")
             return "\n".join(lines)
 
-        medals = ["🥇", "🥈", "🥉"]
         failed = 0
         for index, row in enumerate(winners):
-            prefix = medals[index] if index < len(medals) else "•"
             amount = self._fmt_yadian_amount(
                 quota_to_yadian(int(row["quota"]), self._quota_per_unit())
             )
@@ -1271,10 +1290,113 @@ class FineAPIQQBot(Star):
             if row.get("state") != "granted":
                 failed += 1
                 suffix = "（发放异常，管理员可 /补发抽奖）"
-            lines.append(f"{prefix} {row['username']} — {amount}{suffix}")
+            # 隐藏星芽用户名，只显示用户 ID
+            lines.append(
+                f"{self._lottery_winner_prefix(index)} 用户 #{row['newapi_user_id']}"
+                f" — {amount}{suffix}"
+            )
         if failed:
             lines.append(f"⚠️ {failed} 人奖励未确认到账，管理员可 /补发抽奖 {lottery['id']}")
         return "\n".join(lines)
+
+    def _lottery_result_chain(
+        self,
+        lottery: dict[str, Any],
+        winners: list[dict[str, Any]],
+        *,
+        entries_count: int,
+        eligible_count: int,
+    ):
+        if MessageChain is None or not winners:
+            return None
+
+        chain = MessageChain()
+        header = self._lottery_result_header(
+            lottery,
+            entries_count=entries_count,
+            eligible_count=eligible_count,
+        )
+        chain.message("\n".join(header) + "\n\n")
+
+        failed = 0
+        for index, row in enumerate(winners):
+            amount = self._fmt_yadian_amount(
+                quota_to_yadian(int(row["quota"]), self._quota_per_unit())
+            )
+            suffix = ""
+            if row.get("state") != "granted":
+                failed += 1
+                suffix = "（发放异常，管理员可 /补发抽奖）"
+            chain.message(self._lottery_winner_prefix(index) + " ")
+            platform_id = str(row.get("platform_id") or "").strip()
+            if platform_id:
+                # OneBot 下 qq 就是 QQ 号；name 用「用户」避免暴露星芽用户名
+                chain.at(name="用户", qq=platform_id)
+            else:
+                chain.message(f"用户 #{row['newapi_user_id']}")
+            chain.message(f" — {amount}{suffix}\n")
+        if failed:
+            chain.message(
+                f"⚠️ {failed} 人奖励未确认到账，管理员可 /补发抽奖 {lottery['id']}"
+            )
+        return chain
+
+    def _lottery_history_result(
+        self,
+        event: AstrMessageEvent,
+        lottery: dict[str, Any],
+        winners: list[dict[str, Any]],
+    ):
+        text = self._lottery_result_text(
+            lottery,
+            winners,
+            entries_count=0,
+            eligible_count=0,
+        )
+        display = str(self._cfg("lottery.winner_display", "at") or "at").strip().lower()
+        if (
+            display == "at"
+            and str(lottery.get("group_id") or "").strip()
+            and self._lottery_umo(event) == str(lottery.get("umo") or "")
+        ):
+            chain = self._lottery_result_chain(
+                lottery,
+                winners,
+                entries_count=0,
+                eligible_count=0,
+            )
+            if chain is not None:
+                return event.chain_result(chain.chain)
+        return event.plain_result(text)
+
+    async def _send_lottery_result(
+        self,
+        lottery: dict[str, Any],
+        winners: list[dict[str, Any]],
+        text: str,
+        *,
+        entries_count: int,
+        eligible_count: int,
+    ) -> bool:
+        umo = str(lottery.get("umo") or "").strip()
+        if not umo:
+            return False
+
+        display = str(self._cfg("lottery.winner_display", "at") or "at").strip().lower()
+        if display == "at" and str(lottery.get("group_id") or "").strip():
+            chain = self._lottery_result_chain(
+                lottery,
+                winners,
+                entries_count=entries_count,
+                eligible_count=eligible_count,
+            )
+            if chain is not None:
+                try:
+                    await self.context.send_message(umo, chain)
+                    return True
+                except Exception:
+                    logger.exception("[fineapi] 抽奖结果 @ 消息发送失败，回退文本")
+        return await self._send_text(umo, text)
 
     async def _lottery_loop(self) -> None:
         interval = max(5, int(self._cfg("lottery.auto_draw_interval_seconds", 15) or 15))
@@ -1284,7 +1406,7 @@ class FineAPIQQBot(Star):
                 for lottery in due:
                     if self._stopping:
                         break
-                    text = await self._draw_lottery(lottery, announce=True)
+                    text, _sent = await self._draw_lottery(lottery, announce=True)
                     logger.info(
                         "[fineapi] 自动开奖 #%s：%s",
                         lottery.get("id"),

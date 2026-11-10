@@ -19,7 +19,7 @@
 > 因此本报告的 MVP 范围已收敛为：**绑定 / 余额 / 首绑礼 / 帮助**，
 > 模型状态排在其后；签到相关章节仅作后续参考。
 >
-> 当前进度：MVP + 模型状态 + 芽点抽奖已落地，版本 `0.4.0`；仓库根目录即插件目录。
+> 当前进度：MVP + 模型状态 + 芽点抽奖已落地，版本 `0.4.1`；仓库根目录即插件目录。
 
 ---
 
@@ -386,6 +386,7 @@ bindings(qq primary key, newapi_user_id unique, gift_state, gift_quota, gift_at,
 | 解绑/换绑 | 开奖时重新校验绑定关系，不满足条件的参与者剔除 |
 | 开奖原子性 | `UPDATE ... WHERE status='open'` 抢占，成功后写入中奖记录，防止重复开奖 |
 | 自动开奖 | 后台任务每 15 秒检查；机器人重启后补开到点的抽奖 |
+| 中奖名单 | 默认 @ 绑定的 QQ，隐藏星芽用户名；私聊/@ 失败回退 `用户 #星芽ID` |
 | 结果通知 | 主动发送到创建抽奖的会话；发送失败可 `/抽奖信息` 查询 |
 | 发放失败 | 中奖记录标记 `failed/unknown`，管理员 `/补发抽奖` 重试 |
 | 预算保护 | 最大人数、单次最大芽点、最长预约天数均可配置 |
@@ -461,7 +462,7 @@ display_name: 星芽助手
 short_desc: 绑定星芽账号、查余额、领首绑礼、看模型状态、芽点抽奖
 desc: 在 QQ 群/私聊绑定星芽（xingya.site）账号，查询余额与近 1 小时模型调用正确率，参与芽点抽奖
 help: 发送 /芽点帮助 查看命令
-version: 0.4.0
+version: 0.4.1
 author: fineapi
 astrbot_version: ">=4.9.2,<5"
 support_platforms:
@@ -639,6 +640,7 @@ func BotClaimCheckin(c *gin.Context) {
   },
   "lottery": {
     "enabled": true,
+    "winner_display": "at",
     "default_duration_minutes": 30,
     "default_prize_yadian": 100,
     "default_winners": 1,

@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS gift_grants (
 CREATE TABLE IF NOT EXISTS lotteries (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     umo            TEXT NOT NULL,
+    group_id       TEXT NOT NULL DEFAULT '',
     title          TEXT NOT NULL DEFAULT '',
     prize_yadian   REAL NOT NULL,
     winners        INTEGER NOT NULL,
@@ -107,6 +108,14 @@ class Store:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=3000")
         conn.executescript(SCHEMA)
+        # 兼容旧数据库：补上抽奖开奖名单需要的群 ID
+        lottery_columns = {
+            str(row["name"]) for row in conn.execute("PRAGMA table_info(lotteries)")
+        }
+        if "group_id" not in lottery_columns:
+            conn.execute(
+                "ALTER TABLE lotteries ADD COLUMN group_id TEXT NOT NULL DEFAULT ''"
+            )
         conn.commit()
         return conn
 
@@ -383,6 +392,7 @@ class Store:
         winners: int,
         draw_at: int,
         created_by: str,
+        group_id: str = "",
     ) -> tuple[int, str]:
         def op(conn: sqlite3.Connection):
             if conn.execute(
@@ -394,12 +404,13 @@ class Store:
             cursor = conn.execute(
                 """
                 INSERT INTO lotteries
-                    (umo, title, prize_yadian, winners, draw_at,
+                    (umo, group_id, title, prize_yadian, winners, draw_at,
                      created_at, created_by, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open')
                 """,
                 (
                     str(umo),
+                    str(group_id or ""),
                     str(title),
                     float(prize_yadian),
                     int(winners),

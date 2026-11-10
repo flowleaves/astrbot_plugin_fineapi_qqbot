@@ -2,7 +2,7 @@
 
 AstrBot 插件：在 QQ 群/私聊绑定星芽（`xingya.site`）账号、查询余额、首次绑定赠送额度。
 
-> 当前版本：**0.4.0**（MVP + 模型状态图片 + 芽点抽奖 + 老用户注册礼静默过滤）。适配 QQ 官方机器人、QQ 官方 Webhook 和 OneBot v11（aiocqhttp）。
+> 当前版本：**0.4.1**（MVP + 模型状态图片 + 芽点抽奖 @ 中奖者 + 老用户注册礼静默过滤）。适配 QQ 官方机器人、QQ 官方 Webhook 和 OneBot v11（aiocqhttp）。
 
 ## 功能
 
@@ -110,6 +110,7 @@ pip install -r astrbot_plugin_fineapi_qqbot/requirements.txt
 | `gift.enabled` | 是否开启首绑礼 |
 | `gift.amount_usd` | 赠送金额，默认 `1.0` |
 | `gift.new_user_id_after` | 新用户起始 ID，默认 `8352`；`ID > 该值` 才发放 |
+| `lottery.winner_display` | 开奖名单显示：`at`（默认，@QQ）或 `id`（星芽用户 ID） |
 | `binding.allow_group` / `allow_private` | 允许群聊/私聊绑定 |
 | `access.whitelist_groups` | 群白名单（官方机器人为 `group_openid`），留空表示所有群 |
 | `access.admin_qqs` | 额外插件管理员平台用户 ID（官方机器人为 OpenID，不是 QQ 号） |
@@ -184,6 +185,7 @@ AstrBot WebUI → 配置 → 文转图 → 自定义 HTML 模板
 - 到点后后台任务每 15 秒检查一次并自动开奖；
 - 机器人掉线期间到点的抽奖，重启后会补开；
 - 结果会主动发送到创建抽奖的会话；
+- 中奖名单默认 **@ 绑定的 QQ**，隐藏星芽用户名；私聊、官方机器人或 @ 失败时自动回退 `用户 #星芽ID`；
 - 如果平台限制主动消息发送失败，用户可发 `/抽奖信息` 查看最近结果；
 - 奖励发放失败时管理员可用 `/补发抽奖 <编号>` 重试。
 
