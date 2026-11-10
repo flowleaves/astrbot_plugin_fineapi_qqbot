@@ -2,7 +2,7 @@
 
 AstrBot 插件：在 QQ 群/私聊绑定星芽（`xingya.site`）账号、查询余额、首次绑定赠送额度。
 
-> 当前版本：**0.4.3**（MVP + 模型状态图片 + 芽点抽奖 @ 中奖者 + 老用户注册礼静默过滤）。适配 QQ 官方机器人、QQ 官方 Webhook 和 OneBot v11（aiocqhttp）。
+> 当前版本：**0.4.4**（MVP + 模型状态图片 + 芽点抽奖 @ 中奖者 + 老用户注册礼静默过滤）。适配 QQ 官方机器人、QQ 官方 Webhook 和 OneBot v11（aiocqhttp）。
 
 ## 功能
 
@@ -107,6 +107,7 @@ pip install -r astrbot_plugin_fineapi_qqbot/requirements.txt
 | `site.base_url` | 站点地址，默认 `https://xingya.site`，不要以 `/` 结尾 |
 | `site.access_token` | 管理员个人访问令牌（PAT） |
 | `site.admin_user_id` | rc50 填 `0`；旧版 NewAPI 填管理员用户 ID |
+| `site.max_concurrent_requests` | 同时请求星芽站点的最大并发，默认 `12` |
 | `gift.enabled` | 是否开启首绑礼 |
 | `gift.amount_usd` | 赠送金额，默认 `1.0` |
 | `gift.new_user_id_after` | 新用户起始 ID，默认 `8352`；`ID > 该值` 才发放 |
@@ -196,6 +197,18 @@ AstrBot WebUI → 配置 → 文转图 → 自定义 HTML 模板
 - 奖励发放失败时管理员可用 `/补发抽奖 <编号>` 重试。
 
 > 抽奖仅使用虚拟芽点，不涉及真实货币或现金兑换。
+
+### 并发与性能
+
+发布抽奖后短时间内集中 `/绑定`、`/抽奖` 时：
+
+- 插件→星芽站点的请求受 `site.max_concurrent_requests` 限制（默认 12），
+  避免瞬间打满上游触发 429；
+- 开奖时用一次 SQL JOIN 取出仍符合资格的参与者，不再逐个查绑定；
+- 开奖发奖并发执行，100 人中奖不会因为逐个发放拖成几十秒；
+- SQLite 使用 WAL + `synchronous=NORMAL`，集中写入时不会每次提交都等待磁盘同步；
+- 本地实测：500 次并发参与约 80 ms，500 次并发绑定约 90 ms，
+  真正的瓶颈通常在上游 NewAPI 的 HTTP 请求。
 
 ## 数据
 

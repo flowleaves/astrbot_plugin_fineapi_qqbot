@@ -114,6 +114,9 @@ class FineAPIQQBot(Star):
             str(self._cfg("site.access_token", "")),
             admin_user_id=int(self._cfg("site.admin_user_id", 0) or 0),
             timeout_seconds=int(self._cfg("site.timeout_seconds", 10) or 10),
+            max_concurrent_requests=int(
+                self._cfg("site.max_concurrent_requests", 12) or 12
+            ),
         )
         self._ready = False
         self._ready_lock = asyncio.Lock()
@@ -1187,14 +1190,8 @@ class FineAPIQQBot(Star):
             if not fresh or str(fresh.get("status")) != "open":
                 return "该抽奖已经结束。", False
 
-            entries = await self.store.list_lottery_entries(lottery_id)
-            eligible: list[dict[str, Any]] = []
-            for entry in entries:
-                binding = await self.store.get_binding(str(entry["platform_id"]))
-                if binding and int(binding["newapi_user_id"]) == int(
-                    entry["newapi_user_id"]
-                ):
-                    eligible.append(entry)
+            entries_count = await self.store.count_lottery_entries(lottery_id)
+            eligible = await self.store.list_eligible_lottery_entries(lottery_id)
 
             selected = pick_winners(eligible, int(fresh["winners"]))
             total_quota = yadian_to_quota(
@@ -1223,13 +1220,20 @@ class FineAPIQQBot(Star):
             if not await self.store.finalize_lottery(lottery_id, winner_rows):
                 return "该抽奖已被处理。", False
 
-            for row in winner_rows:
-                await self._award_lottery_winner(lottery_id, row)
+            # 并发发放（实际并发数由客户端的 max_concurrent_requests 限制），
+            # 100 人中奖时不会因为逐个发奖把开奖拖到几十秒。
+            if winner_rows:
+                await asyncio.gather(
+                    *(
+                        self._award_lottery_winner(lottery_id, row)
+                        for row in winner_rows
+                    )
+                )
 
             text = self._lottery_result_text(
                 fresh,
                 winner_rows,
-                entries_count=len(entries),
+                entries_count=entries_count,
                 eligible_count=len(eligible),
             )
             sent = False
@@ -1238,7 +1242,7 @@ class FineAPIQQBot(Star):
                     fresh,
                     winner_rows,
                     text,
-                    entries_count=len(entries),
+                    entries_count=entries_count,
                     eligible_count=len(eligible),
                 )
             return text, sent

@@ -28,6 +28,13 @@
         "default": 10,
         "slider": { "min": 3, "max": 60, "step": 1 }
       },
+      "max_concurrent_requests": {
+        "description": "同时请求星芽站点的最大并发数",
+        "type": "int",
+        "default": 12,
+        "slider": { "min": 1, "max": 50, "step": 1 },
+        "hint": "抽奖/绑定集中爆发时限制并发，避免 429；服务器性能好可调高"
+      },
       "quota_per_unit": {
         "description": "换算单位：多少 quota = 1 美元",
         "type": "int",

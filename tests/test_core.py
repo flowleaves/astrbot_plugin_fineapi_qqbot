@@ -167,6 +167,15 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(ok)
         self.assertEqual(reason, "joined")
 
+        # 开奖时的资格查询：仍然绑定同一星芽账号才算符合条件
+        await self.store.create_binding("u1", 123, "alice")
+        eligible = await self.store.list_eligible_lottery_entries(lottery_id)
+        self.assertEqual([row["platform_id"] for row in eligible], ["u1"])
+        await self.store.delete_binding("u1")
+        self.assertEqual(
+            await self.store.list_eligible_lottery_entries(lottery_id), []
+        )
+
         ok, reason = await self.store.join_lottery(
             lottery_id, "u2", 456, "bob", now=now + 120
         )

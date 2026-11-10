@@ -32,6 +32,7 @@ class NewAPIClient:
         *,
         admin_user_id: int = 0,
         timeout_seconds: int = 10,
+        max_concurrent_requests: int = 12,
     ):
         self.base_url = (base_url or "").strip().rstrip("/")
         if self.base_url and not self.base_url.startswith(("http://", "https://")):
@@ -41,6 +42,10 @@ class NewAPIClient:
         self.timeout = aiohttp.ClientTimeout(total=max(3, int(timeout_seconds or 10)))
         self._session: aiohttp.ClientSession | None = None
         self._lock = asyncio.Lock()
+        # 抽奖/绑定集中爆发时，限制同时打到 NewAPI 的请求数，避免 429 与超时。
+        self._semaphore = asyncio.Semaphore(
+            max(1, int(max_concurrent_requests or 12))
+        )
 
     def configured(self) -> bool:
         return bool(self.base_url and self.access_token)
@@ -58,7 +63,7 @@ class NewAPIClient:
             "Authorization": f"Bearer {self.access_token}",
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "fineapi-qqbot/0.4.3 (AstrBot)",
+            "User-Agent": "fineapi-qqbot/0.4.4 (AstrBot)",
         }
         # 仅旧版 NewAPI 需要；rc50 可填 0 不发送。
         if self.admin_user_id > 0:
@@ -97,58 +102,63 @@ class NewAPIClient:
 
         for attempt in range(retries + 1):
             try:
-                session = await self._get_session()
-                request_timeout = None
-                if timeout_seconds is not None:
-                    request_timeout = aiohttp.ClientTimeout(
-                        total=max(1.0, float(timeout_seconds))
-                    )
-                request_kwargs: dict[str, Any] = {
-                    "params": params,
-                    "json": payload,
-                    "headers": self._headers(),
-                }
-                if request_timeout is not None:
-                    request_kwargs["timeout"] = request_timeout
-                async with session.request(method, url, **request_kwargs) as resp:
-                    text = await resp.text()
-                    content_type = (resp.headers.get("Content-Type") or "").lower()
-
-                    if resp.status in (429, 500, 502, 503, 504) and attempt < retries:
-                        await asyncio.sleep(0.5 * (attempt + 1))
-                        continue
-
-                    if resp.status >= 500:
-                        raise NewAPIError(
-                            self._friendly_http_message(resp.status, ""), resp.status
+                async with self._semaphore:
+                    session = await self._get_session()
+                    request_timeout = None
+                    if timeout_seconds is not None:
+                        request_timeout = aiohttp.ClientTimeout(
+                            total=max(1.0, float(timeout_seconds))
                         )
+                    request_kwargs: dict[str, Any] = {
+                        "params": params,
+                        "json": payload,
+                        "headers": self._headers(),
+                    }
+                    if request_timeout is not None:
+                        request_kwargs["timeout"] = request_timeout
+                    async with session.request(method, url, **request_kwargs) as resp:
+                        text = await resp.text()
+                        content_type = (resp.headers.get("Content-Type") or "").lower()
 
-                    if "application/json" not in content_type:
-                        raise NewAPIError(
-                            f"站点返回了非 JSON 响应（HTTP {resp.status}），"
-                            "可能被 Cloudflare 拦截或地址配置错误",
-                            resp.status,
-                        )
+                        if (
+                            resp.status in (429, 500, 502, 503, 504)
+                            and attempt < retries
+                        ):
+                            await asyncio.sleep(0.5 * (attempt + 1))
+                            continue
 
-                    try:
-                        data = json.loads(text)
-                    except ValueError as exc:
-                        raise NewAPIError(
-                            f"站点返回无法解析的 JSON（HTTP {resp.status}）", resp.status
-                        ) from exc
+                        if resp.status >= 500:
+                            raise NewAPIError(
+                                self._friendly_http_message(resp.status, ""), resp.status
+                            )
 
-                    if not isinstance(data, dict):
-                        raise NewAPIError("站点返回格式异常", resp.status)
+                        if "application/json" not in content_type:
+                            raise NewAPIError(
+                                f"站点返回了非 JSON 响应（HTTP {resp.status}），"
+                                "可能被 Cloudflare 拦截或地址配置错误",
+                                resp.status,
+                            )
 
-                    if resp.status >= 400 or not data.get("success", False):
-                        message = str(data.get("message") or "")
-                        raise NewAPIError(
-                            self._friendly_http_message(resp.status, message),
-                            resp.status,
-                            str(data.get("code") or ""),
-                        )
+                        try:
+                            data = json.loads(text)
+                        except ValueError as exc:
+                            raise NewAPIError(
+                                f"站点返回无法解析的 JSON（HTTP {resp.status}）",
+                                resp.status,
+                            ) from exc
 
-                    return data
+                        if not isinstance(data, dict):
+                            raise NewAPIError("站点返回格式异常", resp.status)
+
+                        if resp.status >= 400 or not data.get("success", False):
+                            message = str(data.get("message") or "")
+                            raise NewAPIError(
+                                self._friendly_http_message(resp.status, message),
+                                resp.status,
+                                str(data.get("code") or ""),
+                            )
+
+                        return data
             except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                 last_error = exc
                 if attempt < retries:

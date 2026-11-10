@@ -107,6 +107,10 @@ class Store:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=3000")
+        # WAL 下 NORMAL 已足够安全，避免每次提交都 fsync，集中写入时快很多。
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA cache_size=-16000")
         conn.executescript(SCHEMA)
         # 兼容旧数据库：补上抽奖开奖名单需要的群 ID
         lottery_columns = {
@@ -524,6 +528,28 @@ class Store:
         def op(conn: sqlite3.Connection):
             rows = conn.execute(
                 "SELECT * FROM lottery_entries WHERE lottery_id = ? ORDER BY joined_at ASC",
+                (int(lottery_id),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+        return await self._call(op)
+
+    async def list_eligible_lottery_entries(
+        self, lottery_id: int
+    ) -> list[dict[str, Any]]:
+        """一次 JOIN 取出仍然绑定原星芽账号的参与者，避免开奖时 N+1 查询。"""
+
+        def op(conn: sqlite3.Connection):
+            rows = conn.execute(
+                """
+                SELECT e.*
+                  FROM lottery_entries e
+                  JOIN bindings b
+                    ON b.qq = e.platform_id
+                   AND b.newapi_user_id = e.newapi_user_id
+                 WHERE e.lottery_id = ?
+                 ORDER BY e.joined_at ASC
+                """,
                 (int(lottery_id),),
             ).fetchall()
             return [dict(row) for row in rows]

@@ -3,7 +3,7 @@ display_name: 星芽助手
 short_desc: 绑定星芽账号、查余额、领首绑礼、看模型状态、芽点抽奖
 desc: 在 QQ 群/私聊绑定星芽（xingya.site）账号，查询余额与累计消耗，查看近 1 小时模型调用正确率，参与和管理芽点抽奖，首次绑定赠送额度。基于 NewAPI 管理 API（PAT），不保存用户密码。
 help: 发送 /用户命令 查看用户命令，管理员发送 /管理命令
-version: 0.4.3
+version: 0.4.4
 author: fineapi
 repo: https://github.com/flowleaves/astrbot_plugin_fineapi_qqbot
 astrbot_version: ">=4.9.2,<5"
