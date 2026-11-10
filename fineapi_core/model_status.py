@@ -393,3 +393,240 @@ def render(analysis: Analysis, *, now: int | None = None, show_ok: bool = False)
     if not analysis.models:
         lines.append("ℹ️ 统计窗口内没有错误日志，也没有性能数据。")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# 1 小时总体正确率（/<模型>状态）
+# ---------------------------------------------------------------------------
+
+HOUR_LABELS = {
+    "ok": "稳定",
+    "warn": "波动",
+    "bad": "异常",
+    "na": "数据不足",
+}
+
+
+def _hour_status(rate: float | None, calls: int, min_calls: int) -> str:
+    if rate is None or calls < max(1, int(min_calls)):
+        return "na"
+    if rate >= 0.95:
+        return "ok"
+    if rate >= 0.80:
+        return "warn"
+    return "bad"
+
+
+def _bucket_index(timestamp: int, start: int, window_minutes: int, buckets: int = 30) -> int:
+    span = max(1, int(window_minutes) * 60)
+    bucket_seconds = max(1, span // buckets)
+    index = int((int(timestamp) - int(start)) // bucket_seconds)
+    return max(0, min(buckets - 1, index))
+
+
+def analyze_hour(
+    success_logs: list[dict[str, Any]],
+    error_logs: list[dict[str, Any]],
+    model_names: list[str],
+    query: str,
+    *,
+    now: int | None = None,
+    window_minutes: int = 60,
+    min_calls: int = 5,
+    top_n: int = 10,
+    exclude_client_errors: bool = True,
+) -> dict[str, Any]:
+    """统计近 1 小时每个模型的调用数、正确率与 30 段状态。
+
+    - 成功调用来自 type=2 消费日志；
+    - 错误来自 type=5 错误日志；
+    - 4xx 默认不计入调用数/错误数；
+    - 同一用户在同一模型上的重复错误只算 1 次；
+    - 调用数 = 成功 + 去重后的错误数。
+    """
+    now = int(now or time.time())
+    window_minutes = max(1, int(window_minutes))
+    start = now - window_minutes * 60
+    buckets_count = 30
+    records: dict[str, dict[str, Any]] = {}
+    available = {str(name).strip() for name in model_names if str(name).strip()}
+
+    def record(name: str) -> dict[str, Any]:
+        if name not in records:
+            records[name] = {
+                "success": 0,
+                "errors": {},
+                "success_buckets": [0] * buckets_count,
+                "error_buckets": [0] * buckets_count,
+            }
+        return records[name]
+
+    for item in success_logs:
+        if not isinstance(item, dict):
+            continue
+        timestamp = _to_int(item.get("created_at"))
+        if timestamp and (timestamp < start or timestamp > now):
+            continue
+        name = str(item.get("model_name") or "").strip()
+        if not name or name == "-":
+            continue
+        agg = record(name)
+        agg["success"] += 1
+        if timestamp:
+            agg["success_buckets"][_bucket_index(timestamp, start, window_minutes)] += 1
+
+    for item in error_logs:
+        if not isinstance(item, dict):
+            continue
+        timestamp = _to_int(item.get("created_at"))
+        if timestamp and (timestamp < start or timestamp > now):
+            continue
+        name = str(item.get("model_name") or "").strip()
+        if not name or name == "-":
+            continue
+        other = parse_other(item)
+        status = extract_status_code(item, other)
+        if exclude_client_errors and 400 <= status < 500:
+            continue
+        user_key = extract_user_key(item)
+        agg = record(name)
+        if user_key in agg["errors"]:
+            continue
+        agg["errors"][user_key] = timestamp or now
+        if timestamp:
+            agg["error_buckets"][_bucket_index(timestamp, start, window_minutes)] += 1
+
+    available.update(records.keys())
+    query = str(query or "").strip()
+    is_overview = query in {"", "模型", "全部", "所有"}
+
+    if is_overview:
+        matched = [name for name in records if (records[name]["success"] + len(records[name]["errors"])) > 0]
+    else:
+        lowered = query.lower()
+        matched = [name for name in available if lowered in name.lower()]
+        exact = [name for name in matched if name.lower() == lowered]
+        if exact:
+            matched = exact
+
+    models: list[dict[str, Any]] = []
+    for name in matched:
+        agg = records.get(name)
+        if agg is None:
+            success = 0
+            error_count = 0
+            success_buckets = [0] * buckets_count
+            error_buckets = [0] * buckets_count
+        else:
+            success = int(agg["success"])
+            error_count = len(agg["errors"])
+            success_buckets = agg["success_buckets"]
+            error_buckets = agg["error_buckets"]
+        calls = success + error_count
+        rate = (success / calls) if calls > 0 else None
+        status = _hour_status(rate, calls, min_calls)
+        if status == "na":
+            rate_display = None
+            segments = ["na"] * buckets_count
+        else:
+            rate_display = rate
+            segments = []
+            for index in range(buckets_count):
+                ok = success_buckets[index]
+                bad = error_buckets[index]
+                total = ok + bad
+                if total <= 0:
+                    segments.append("na")
+                else:
+                    segments.append(
+                        _hour_status(ok / total, total, min_calls=1)
+                    )
+        models.append(
+            {
+                "name": name,
+                "calls": calls,
+                "success": success,
+                "rate": rate_display,
+                "status": status,
+                "status_text": HOUR_LABELS[status],
+                "segments": segments,
+            }
+        )
+
+    models.sort(
+        key=lambda row: (
+            -int(row["calls"]),
+            -(float(row["rate"]) if row["rate"] is not None else -1),
+            str(row["name"]),
+        )
+    )
+    shown = models[: max(1, int(top_n))]
+    total_calls = sum(int(row["calls"]) for row in shown)
+    weighted_success = sum(int(row["success"]) for row in shown)
+    overall_rate = (weighted_success / total_calls) if total_calls > 0 else None
+
+    return {
+        "query": query or "模型",
+        "window_minutes": window_minutes,
+        "window_start": start,
+        "window_end": now,
+        "matched": len(models),
+        "shown": len(shown),
+        "total_calls": total_calls,
+        "overall_rate": overall_rate,
+        "models": shown,
+    }
+
+
+def _format_clock(timestamp: int) -> str:
+    try:
+        return time.strftime("%H:%M", time.localtime(int(timestamp)))
+    except (ValueError, OSError):
+        return "-"
+
+
+def build_status_text(analysis: dict[str, Any]) -> tuple[str, str]:
+    """生成 (带 JSON 注释的 T2I 文本, 纯 Markdown 文本)。"""
+    models = analysis.get("models") or []
+    window_text = (
+        f"{_format_clock(analysis.get('window_start', 0))} → "
+        f"{_format_clock(analysis.get('window_end', 0))}"
+    )
+    window_minutes = int(analysis.get("window_minutes", 60))
+    window_label = "近 1 小时" if window_minutes == 60 else f"近 {window_minutes} 分钟"
+    subtitle = f"{window_label} · 调用正确率"
+    if analysis.get("error_log_total") == 0 and analysis.get("total_calls", 0) > 0:
+        subtitle += " · 错误日志为空，请确认 ERROR_LOG_ENABLED"
+    meta = {
+        "title": "模型状态",
+        "subtitle": subtitle,
+        "window_text": window_text,
+        "query": analysis.get("query") or "模型",
+        "matched": analysis.get("matched", len(models)),
+        "shown": analysis.get("shown", len(models)),
+        "total_calls": analysis.get("total_calls", 0),
+        "overall_rate": analysis.get("overall_rate"),
+        "generated_at": _format_clock(analysis.get("window_end", 0)),
+        "models": models,
+    }
+
+    lines = [
+        f"**{meta['query']} · {window_label}**",
+        "",
+        "| 模型 | 调用 | 正确率 | 状态 |",
+        "|---|---:|---:|---|",
+    ]
+    for row in models:
+        rate = row.get("rate")
+        rate_text = f"{float(rate) * 100:.2f}%" if rate is not None else "—"
+        lines.append(
+            f"| {row['name']} | {row['calls']} | {rate_text} | {row['status_text']} |"
+        )
+    if not models:
+        lines.append("| 未找到匹配模型 | 0 | — | 数据不足 |")
+
+    markdown = "\n".join(lines)
+    comment = "<!--XINGYA_MODEL_STATUS:" + json.dumps(
+        meta, ensure_ascii=False, separators=(",", ":")
+    ) + "-->"
+    return comment + "\n" + markdown, markdown

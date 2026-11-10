@@ -58,7 +58,7 @@ class NewAPIClient:
             "Authorization": f"Bearer {self.access_token}",
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "fineapi-qqbot/0.3.2 (AstrBot)",
+            "User-Agent": "fineapi-qqbot/0.4.0 (AstrBot)",
         }
         # 仅旧版 NewAPI 需要；rc50 可填 0 不发送。
         if self.admin_user_id > 0:
@@ -204,6 +204,14 @@ class NewAPIClient:
         if not isinstance(payload, dict):
             raise NewAPIError("站点未返回日志数据")
         return payload
+
+    async def get_pricing(self) -> list[dict[str, Any]]:
+        """读取模型价格表，用于模糊查询时的模型名候选。"""
+        data = await self._request("GET", "/api/pricing")
+        payload = data.get("data")
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        return []
 
     async def get_perf_summary(self, hours: int = 1) -> dict[str, Any]:
         """读取模型性能汇总（公开/登录接口，不需 log 权限）。"""

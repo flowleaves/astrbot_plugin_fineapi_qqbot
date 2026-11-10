@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>星芽 · 模型状态</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400..800&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/misans@4.1.0/lib/Normal/MiSans-Regular.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/misans@4.1.0/lib/Normal/MiSans-Bold.min.css">
+  <style>
+    :root {
+      --page: 1000px;
+      --paper: #f5f8f3;
+      --card: #ffffff;
+      --ink: #1d2b25;
+      --muted: #6c7b73;
+      --faint: #9aa8a0;
+      --line: #e1e9e3;
+      --green: #2f8f6f;
+      --green-deep: #1f6f57;
+      --green-soft: #e5f4ec;
+      --gold: #c18a2b;
+      --gold-soft: #fbf2df;
+      --coral: #cf5b4e;
+      --coral-soft: #fbe9e6;
+      --gray-soft: #eef2ef;
+      --shadow: 0 10px 28px rgba(31, 66, 52, 0.06);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { background: var(--paper); }
+    body {
+      position: relative;
+      width: var(--page);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 42px 44px 34px;
+      overflow: hidden;
+      color: var(--ink);
+      background:
+        radial-gradient(720px 360px at 92% -8%, rgba(193, 138, 43, 0.10), transparent 62%),
+        radial-gradient(760px 460px at -12% 108%, rgba(47, 143, 111, 0.11), transparent 64%),
+        var(--paper);
+      font-family: "MiSans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    .watermark {
+      position: absolute;
+      top: -70px;
+      right: -92px;
+      width: 360px;
+      height: 360px;
+      opacity: 0.06;
+      pointer-events: none;
+    }
+    .masthead {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+    .brand { display: inline-flex; align-items: center; gap: 12px; }
+    .brand-mark { width: 42px; height: 42px; flex: 0 0 auto; }
+    .brand-text { display: flex; flex-direction: column; line-height: 1.08; }
+    .brand-cn { font-size: 25px; font-weight: 800; letter-spacing: 0.06em; }
+    .brand-en {
+      margin-top: 4px;
+      color: var(--muted);
+      font-family: "Outfit", sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.30em;
+    }
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border: 1px solid #cfdad3;
+      border-radius: 999px;
+      color: var(--green-deep);
+      background: rgba(255, 255, 255, 0.72);
+      font-family: "Outfit", sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      white-space: nowrap;
+    }
+    .status-chip::before {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 4px rgba(47, 143, 111, 0.12);
+      content: "";
+    }
+    .hero {
+      position: relative;
+      z-index: 1;
+      margin: 30px 0 22px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .hero h1 {
+      margin: 0;
+      font-size: 46px;
+      font-weight: 800;
+      letter-spacing: -0.045em;
+      line-height: 1.12;
+    }
+    .hero h1::after {
+      display: block;
+      width: 78px;
+      height: 5px;
+      margin-top: 12px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--green), var(--gold));
+      content: "";
+    }
+    .hero-sub {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 16px;
+      margin-top: 13px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.66);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .chip b { color: var(--ink); font-family: "Outfit", sans-serif; font-size: 13px; }
+    .cards {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .model-card {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 16px 20px 15px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--green);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+    .model-card.is-warn { border-left-color: var(--gold); }
+    .model-card.is-bad { border-left-color: var(--coral); }
+    .model-card.is-na { border-left-color: var(--faint); }
+    .card-main { min-width: 0; flex: 1 1 auto; }
+    .model-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .model-name {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      color: var(--ink);
+      font-family: "Outfit", "MiSans", sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      line-height: 1.25;
+    }
+    .pill {
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .pill::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; content: ""; }
+    .pill-ok { color: var(--green-deep); background: var(--green-soft); }
+    .pill-warn { color: var(--gold); background: var(--gold-soft); }
+    .pill-bad { color: var(--coral); background: var(--coral-soft); }
+    .pill-na { color: var(--muted); background: var(--gray-soft); }
+    .card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .card-meta .strong { color: var(--ink); font-family: "Outfit", sans-serif; font-weight: 700; }
+    .segments { display: flex; gap: 3px; width: 100%; margin-top: 12px; }
+    .seg { height: 8px; flex: 1 1 0; min-width: 2px; border-radius: 3px; background: var(--gray-soft); }
+    .seg-ok { background: #4caf8a; }
+    .seg-warn { background: #e5b64f; }
+    .seg-bad { background: #e07b6e; }
+    .seg-na { background: #dfe7e2; }
+    .gauge {
+      position: relative;
+      display: grid;
+      width: 94px;
+      height: 94px;
+      flex: 0 0 94px;
+      place-items: center;
+      border-radius: 50%;
+      background: conic-gradient(var(--gauge-color) calc(var(--pct) * 1%), var(--gauge-track) 0);
+    }
+    .gauge::after {
+      position: absolute;
+      width: 74px;
+      height: 74px;
+      border-radius: 50%;
+      background: var(--card);
+      content: "";
+    }
+    .is-ok .gauge {
+      --gauge-color: #3fa27d;
+      --gauge-track: #e2f0e8;
+    }
+    .is-warn .gauge {
+      --gauge-color: #d3a33e;
+      --gauge-track: #f6edd9;
+    }
+    .is-bad .gauge {
+      --gauge-color: #d46b5e;
+      --gauge-track: #f7e4e1;
+    }
+    .is-na .gauge {
+      --gauge-color: #c7d2cc;
+      --gauge-track: #edf2ef;
+    }
+    .gauge-inner {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.05;
+    }
+    .gauge-value {
+      font-family: "Outfit", sans-serif;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+    }
+    .gauge-value small { font-size: 9px; font-weight: 700; }
+    .gauge-label { margin-top: 3px; color: var(--muted); font-size: 9px; letter-spacing: 0.08em; }
+    .is-warn .gauge-value { color: #a9791e; }
+    .is-bad .gauge-value { color: #b84f43; }
+    .is-na .gauge-value { color: var(--muted); font-size: 14px; }
+    footer {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 24px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+      color: var(--faint);
+      font-size: 11px;
+    }
+    footer b { color: var(--green-deep); font-weight: 700; }
+    .markdown-body {
+      position: relative;
+      z-index: 1;
+      margin-top: 20px;
+      font-size: 17px;
+      line-height: 1.72;
+    }
+    .markdown-body h1, .markdown-body h2, .markdown-body h3 { font-weight: 800; line-height: 1.28; }
+    .markdown-body h2 { margin-top: 1.5em; padding-top: 0.5em; border-top: 1px solid var(--line); }
+    .markdown-body table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      border: 1px solid #cfdad3;
+      border-radius: 12px;
+      background: #fff;
+      font-size: 14px;
+    }
+    .markdown-body th, .markdown-body td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+    }
+    .markdown-body th { background: #eef4ef; font-weight: 700; white-space: nowrap; }
+    .markdown-body tr:last-child td { border-bottom: 0; }
+    .markdown-body code {
+      padding: 0.1em 0.35em;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #f1f5f2;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.86em;
+    }
+    .markdown-body pre {
+      padding: 12px 14px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #f3f7f4;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+    @media (max-width: 720px) {
+      body { width: 100%; padding: 24px 16px; }
+      .hero h1 { font-size: 34px; }
+      .model-card { gap: 12px; padding: 14px; }
+      .model-name { font-size: 18px; }
+      .gauge { width: 70px; height: 70px; flex-basis: 70px; }
+      .gauge::after { width: 54px; height: 54px; }
+      .gauge-value { font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+  <svg class="watermark" viewBox="0 0 200 200" aria-hidden="true">
+    <path d="M100 178V98" stroke="#1f6f57" stroke-width="9" stroke-linecap="round" fill="none"/>
+    <path d="M96 104C55 104 32 76 32 38c43 0 64 30 64 66Z" fill="#2f8f6f"/>
+    <path d="M104 104c41 0 64-28 64-66-43 0-64 30-64 66Z" fill="#62b995"/>
+    <path d="M100 58l7 15 17 2-12 12 3 17-15-8-15 8 3-17-12-12 17-2Z" fill="#d9a441"/>
+  </svg>
+
+  <header class="masthead">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="18" fill="#1f6f57"/>
+        <path d="M32 49V31" stroke="#d9f2e4" stroke-width="3.4" stroke-linecap="round"/>
+        <path d="M30 33C19 33 13 26 13 17c10 0 17 6 17 16Z" fill="#7fd0ad"/>
+        <path d="M34 33c11 0 17-7 17-16-10 0-17 6-17 16Z" fill="#b9e8d0"/>
+        <path d="M32 18l2.6 5.6 6.1.7-4.5 4.1 1.2 6-5.4-3.1-5.4 3.1 1.2-6-4.5-4.1 6.1-.7Z" fill="#e6b85c"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-cn">星芽</span>
+        <span class="brand-en">XINGYA · MODEL STATUS</span>
+      </div>
+    </div>
+    <span class="status-chip">AI MODEL STATUS</span>
+  </header>
+
+  <section class="hero" id="hero">
+    <h1 id="hero-title">模型状态</h1>
+    <div class="hero-sub" id="hero-sub">近 1 小时 · 调用正确率</div>
+    <div class="chips" id="chips"></div>
+  </section>
+
+  <section class="cards" id="cards"></section>
+  <main class="markdown-body" id="markdown-body" hidden></main>
+
+  <footer>
+    <span><b>xingya.site</b> · 星芽 AI 聚合</span>
+    <span><span id="foot-time"></span> <span id="foot-version">v{{ version }}</span></span>
+  </footer>
+
+  <textarea id="markdown-source" hidden>{{ text | safe }}</textarea>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+    (function () {
+      const STATUS_TEXT = { ok: "稳定", warn: "波动", bad: "异常", na: "数据不足" };
+      const raw = document.getElementById("markdown-source").value || "";
+      const metaRe = /<!--XINGYA_MODEL_STATUS:([\s\S]*?)-->/;
+      const metaMatch = raw.match(metaRe);
+      let meta = {};
+      if (metaMatch) {
+        try { meta = JSON.parse(metaMatch[1]); } catch (e) { meta = {}; }
+      }
+      const clean = raw.replace(/<!--XINGYA_MODEL_STATUS:[\s\S]*?-->/g, "").trim();
+      const temp = document.createElement("div");
+      if (window.marked && clean) {
+        marked.use({ gfm: true, breaks: false });
+        temp.innerHTML = marked.parse(clean);
+      } else {
+        temp.textContent = clean;
+      }
+
+      function makeEl(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined && text !== null) node.textContent = text;
+        return node;
+      }
+
+      function deriveStatus(rate, calls) {
+        if (rate === null || calls < 5) return "na";
+        if (rate >= 0.95) return "ok";
+        if (rate >= 0.80) return "warn";
+        return "bad";
+      }
+
+      function normalize(list) {
+        if (!Array.isArray(list)) return [];
+        return list.map(function (m) {
+          const calls = Math.max(0, parseInt(m.calls, 10) || 0);
+          let rate = (m.rate === null || m.rate === undefined || m.rate === "") ? null : Number(m.rate);
+          if (!Number.isFinite(rate)) rate = null;
+          if (rate !== null && rate > 1) rate = rate / 100;
+          const status = ["ok", "warn", "bad", "na"].indexOf(m.status) >= 0
+            ? m.status
+            : deriveStatus(rate, calls);
+          return {
+            name: String(m.name || "").trim(),
+            calls: calls,
+            rate: rate,
+            status: status,
+            status_text: m.status_text || STATUS_TEXT[status],
+            segments: Array.isArray(m.segments) ? m.segments : null,
+            latency_ms: m.latency_ms || null
+          };
+        }).filter(function (m) { return m.name; });
+      }
+
+      function statusFromText(text, rate, calls) {
+        if (text.indexOf("数据不足") >= 0) return "na";
+        if (text.indexOf("异常") >= 0) return "bad";
+        if (text.indexOf("波动") >= 0 || text.indexOf("警告") >= 0) return "warn";
+        if (text.indexOf("稳定") >= 0 || text.indexOf("正常") >= 0) return "ok";
+        return deriveStatus(rate, calls);
+      }
+
+      function tableModels(table) {
+        const headers = Array.prototype.map.call(
+          table.querySelectorAll("thead th"),
+          function (th) { return th.textContent.trim(); }
+        );
+        function idxOf(names) {
+          for (let i = 0; i < headers.length; i++) {
+            for (let j = 0; j < names.length; j++) {
+              if (headers[i].indexOf(names[j]) >= 0) return i;
+            }
+          }
+          return -1;
+        }
+        const nameIdx = idxOf(["模型", "model"]);
+        const callsIdx = idxOf(["调用", "次数"]);
+        const rateIdx = idxOf(["正确率", "成功率"]);
+        const statusIdx = idxOf(["状态"]);
+        if (nameIdx < 0 || rateIdx < 0) return [];
+        return Array.prototype.map.call(table.querySelectorAll("tbody tr"), function (tr) {
+          const cells = tr.querySelectorAll("td");
+          if (!cells[nameIdx]) return null;
+          const name = cells[nameIdx].textContent.trim();
+          const callsText = callsIdx >= 0 && cells[callsIdx] ? cells[callsIdx].textContent : "0";
+          const calls = parseInt(callsText.replace(/[^\d]/g, ""), 10) || 0;
+          const rateText = cells[rateIdx] ? cells[rateIdx].textContent.trim() : "";
+          const rateValue = parseFloat(rateText.replace(/[^\d.]/g, ""));
+          const rate = rateText.indexOf("%") >= 0 && Number.isFinite(rateValue) ? rateValue / 100 : null;
+          const statusText = statusIdx >= 0 && cells[statusIdx] ? cells[statusIdx].textContent.trim() : "";
+          return {
+            name: name,
+            calls: calls,
+            rate: rate,
+            status: statusFromText(statusText, rate, calls),
+            status_text: statusText || undefined,
+            segments: null,
+            latency_ms: null
+          };
+        }).filter(Boolean);
+      }
+
+      function findTable(root) {
+        const tables = root.querySelectorAll("table");
+        for (let i = 0; i < tables.length; i++) {
+          const models = tableModels(tables[i]);
+          if (models.length) return models;
+        }
+        return [];
+      }
+
+      function makeSegments(rate, calls) {
+        if (rate === null || calls < 5) return new Array(30).fill("na");
+        let failures = Math.round((1 - rate) * 30);
+        failures = Math.max(0, Math.min(30, failures));
+        const bad = Math.floor(failures / 2);
+        const warn = failures - bad;
+        const result = new Array(30).fill("ok");
+        for (let i = 0; i < failures; i++) {
+          const pos = Math.min(29, Math.floor((i + 0.5) * 30 / failures));
+          result[pos] = i < bad ? "bad" : "warn";
+        }
+        return result;
+      }
+
+      function addChip(label, value) {
+        if (value === undefined || value === null || value === "") return;
+        const chip = makeEl("span", "chip", label);
+        chip.appendChild(makeEl("b", "", String(value)));
+        document.getElementById("chips").appendChild(chip);
+      }
+
+      function renderHeader(models) {
+        document.getElementById("hero-title").textContent = meta.title || "模型状态";
+        let sub = meta.subtitle || "近 1 小时 · 调用正确率";
+        if (meta.window_text) sub += " · " + meta.window_text;
+        document.getElementById("hero-sub").textContent = sub;
+        const totalCalls = meta.total_calls !== undefined
+          ? meta.total_calls
+          : models.reduce(function (sum, m) { return sum + m.calls; }, 0);
+        let overall = meta.overall_rate;
+        if (overall !== undefined && overall !== null && Number(overall) > 1) {
+          overall = Number(overall) / 100;
+        }
+        if (overall === undefined || overall === null) {
+          let weighted = 0, calls = 0;
+          models.forEach(function (m) {
+            if (m.rate !== null && m.calls >= 5) {
+              weighted += m.rate * m.calls;
+              calls += m.calls;
+            }
+          });
+          overall = calls ? weighted / calls : null;
+        }
+        addChip("查询 ", meta.query || "");
+        addChip("匹配 ", meta.matched !== undefined ? meta.matched : models.length);
+        addChip("显示 ", meta.shown !== undefined ? meta.shown : models.length);
+        addChip("调用 ", totalCalls);
+        if (overall !== null && overall !== undefined) {
+          addChip("整体 ", (Number(overall) * 100).toFixed(2) + "%");
+        }
+        document.getElementById("foot-time").textContent = meta.generated_at || "";
+      }
+
+      function renderCards(models) {
+        const cards = document.getElementById("cards");
+        cards.innerHTML = "";
+        models.forEach(function (m) {
+          const hasRate = m.rate !== null && m.calls >= 5;
+          const pct = hasRate ? Math.max(0, Math.min(100, m.rate * 100)) : 0;
+          const rateText = hasRate ? (pct >= 99.995 ? "100" : pct.toFixed(2)) : "—";
+          const card = makeEl("article", "model-card is-" + m.status);
+          const main = makeEl("div", "card-main");
+          const head = makeEl("div", "model-head");
+          head.appendChild(makeEl("div", "model-name", m.name));
+          head.appendChild(makeEl("span", "pill pill-" + m.status, m.status_text || STATUS_TEXT[m.status]));
+          main.appendChild(head);
+
+          const metaRow = makeEl("div", "card-meta");
+          const callsSpan = makeEl("span");
+          callsSpan.appendChild(makeEl("span", "strong", String(m.calls)));
+          callsSpan.appendChild(document.createTextNode(" 次调用"));
+          metaRow.appendChild(callsSpan);
+          if (m.latency_ms) metaRow.appendChild(makeEl("span", "", m.latency_ms + "ms"));
+          main.appendChild(metaRow);
+
+          const segments = m.segments && m.segments.length ? m.segments : makeSegments(m.rate, m.calls);
+          const bar = makeEl("div", "segments");
+          segments.forEach(function (s) {
+            const cls = ["ok", "warn", "bad", "na"].indexOf(s) >= 0 ? s : "na";
+            bar.appendChild(makeEl("i", "seg seg-" + cls));
+          });
+          main.appendChild(bar);
+          card.appendChild(main);
+
+          const gauge = makeEl("div", "gauge");
+          gauge.style.setProperty("--pct", String(pct));
+          const inner = makeEl("div", "gauge-inner");
+          const value = makeEl("div", "gauge-value", rateText);
+          if (hasRate) value.appendChild(makeEl("small", "", "%"));
+          inner.appendChild(value);
+          inner.appendChild(makeEl("div", "gauge-label", hasRate ? "成功率" : "数据不足"));
+          gauge.appendChild(inner);
+          card.appendChild(gauge);
+          cards.appendChild(card);
+        });
+      }
+
+      let models = normalize(meta.models);
+      if (!models.length) models = findTable(temp);
+
+      if (models.length) {
+        renderHeader(models);
+        renderCards(models);
+      } else {
+        document.getElementById("hero").hidden = true;
+        const body = document.getElementById("markdown-body");
+        body.hidden = false;
+        body.innerHTML = temp.innerHTML;
+        document.getElementById("cards").hidden = true;
+      }
+    })();
+  </script>
+</body>
+</html>

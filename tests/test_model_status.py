@@ -6,8 +6,12 @@ PLUGIN_DIR = Path(__file__).resolve().parents[1]
 if str(PLUGIN_DIR) not in sys.path:
     sys.path.insert(0, str(PLUGIN_DIR))
 
+import json
+
 from fineapi_core.model_status import (
     analyze,
+    analyze_hour,
+    build_status_text,
     extract_status_code,
     parse_other,
     render,
@@ -141,6 +145,99 @@ class ModelStatusTest(unittest.TestCase):
         self.assertIn("model-b", text)
         self.assertIn("已忽略 4xx", text)
         self.assertIn("98.0%", text)
+
+
+class HourStatusTest(unittest.TestCase):
+    def _success(self, model, user, age=60):
+        return {
+            "model_name": model,
+            "user_id": user,
+            "created_at": NOW - age,
+        }
+
+    def _error(self, model, user, status=500, age=60):
+        return {
+            "model_name": model,
+            "user_id": user,
+            "created_at": NOW - age,
+            "other": {"status_code": status},
+        }
+
+    def test_success_rate_and_dedupe(self):
+        successes = [self._success("model-a", user) for user in range(10)]
+        errors = [
+            self._error("model-a", 1, 500),
+            self._error("model-a", 1, 502),  # 同一用户重复，只算 1
+            self._error("model-a", 2, 503),
+        ]
+        result = analyze_hour(
+            successes, errors, ["model-a"], "model-a", now=NOW
+        )
+        row = result["models"][0]
+        self.assertEqual(row["calls"], 12)
+        self.assertAlmostEqual(row["rate"], 10 / 12)
+        self.assertEqual(row["status"], "warn")
+        self.assertEqual(len(row["segments"]), 30)
+
+    def test_4xx_excluded(self):
+        successes = [self._success("model-a", user) for user in range(5)]
+        errors = [
+            self._error("model-a", 1, 400),
+            self._error("model-a", 2, 401),
+            self._error("model-a", 3, 429),
+        ]
+        result = analyze_hour(successes, errors, ["model-a"], "model-a", now=NOW)
+        row = result["models"][0]
+        self.assertEqual(row["calls"], 5)
+        self.assertEqual(row["rate"], 1.0)
+
+    def test_data_insufficient(self):
+        successes = [self._success("model-a", user) for user in range(3)]
+        errors = [self._error("model-a", 9, 500)]
+        result = analyze_hour(successes, errors, ["model-a"], "model-a", now=NOW)
+        row = result["models"][0]
+        self.assertEqual(row["calls"], 4)
+        self.assertIsNone(row["rate"])
+        self.assertEqual(row["status"], "na")
+
+    def test_fuzzy_and_top_n(self):
+        names = [
+            "claude-sonnet-4",
+            "claude-3-7-sonnet",
+            "claude-haiku",
+            "gpt-4o",
+            "gpt-4o-mini",
+        ]
+        successes = []
+        for index, name in enumerate(names):
+            successes.extend(
+                self._success(name, user) for user in range(10 + index)
+            )
+        result = analyze_hour(
+            successes, [], names, "claude", now=NOW, top_n=2
+        )
+        self.assertEqual(result["matched"], 3)
+        self.assertEqual(result["shown"], 2)
+        self.assertEqual(len(result["models"]), 2)
+
+    def test_exact_match(self):
+        names = ["gpt-4o", "gpt-4o-mini"]
+        successes = [self._success("gpt-4o", 1) for _ in range(10)]
+        result = analyze_hour(successes, [], names, "gpt-4o", now=NOW)
+        self.assertEqual(result["matched"], 1)
+        self.assertEqual(result["models"][0]["name"], "gpt-4o")
+
+    def test_build_status_text(self):
+        successes = [self._success("model-a", user) for user in range(10)]
+        errors = [self._error("model-a", 1, 500)]
+        result = analyze_hour(successes, errors, ["model-a"], "model-a", now=NOW)
+        text, markdown = build_status_text(result)
+        self.assertIn("<!--XINGYA_MODEL_STATUS:", text)
+        self.assertIn("| 模型 | 调用 | 正确率 | 状态 |", markdown)
+        comment = text.split("-->", 1)[0].split(":", 1)[1]
+        meta = json.loads(comment)
+        self.assertEqual(meta["models"][0]["name"], "model-a")
+        self.assertEqual(len(meta["models"][0]["segments"]), 30)
 
 
 if __name__ == "__main__":

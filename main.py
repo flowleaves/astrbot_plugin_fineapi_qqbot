@@ -51,8 +51,7 @@ try:
         pick_winners,
         split_prize,
     )
-    from .fineapi_core.model_status import analyze as analyze_model_status
-    from .fineapi_core.model_status import render as render_model_status
+    from .fineapi_core.model_status import analyze_hour, build_status_text
     from .fineapi_core.quota import (
         format_quota,
         format_usd,
@@ -71,8 +70,7 @@ except ImportError:  # pragma: no cover
         pick_winners,
         split_prize,
     )
-    from fineapi_core.model_status import analyze as analyze_model_status
-    from fineapi_core.model_status import render as render_model_status
+    from fineapi_core.model_status import analyze_hour, build_status_text
     from fineapi_core.quota import (
         format_quota,
         format_usd,
@@ -112,7 +110,7 @@ class FineAPIQQBot(Star):
         self._ready = False
         self._ready_lock = asyncio.Lock()
         self._last_query: dict[str, float] = {}
-        self._model_status_cache: tuple[float, str] | None = None
+        self._model_status_cache: dict[str, tuple[float, str, str, str | None]] = {}
         self._lottery_task: asyncio.Task | None = None
         self._lottery_lock = asyncio.Lock()
         self._stopping = False
@@ -306,7 +304,8 @@ class FineAPIQQBot(Star):
                 "/领取首绑礼          领取首次绑定赠送",
                 "/抽奖                参与当前会话的抽奖",
                 "/抽奖信息            查看当前抽奖 / 最近开奖结果",
-                "/模型状态            近 30 分钟模型异常状态",
+                "/<模型>状态           模糊查询模型，例：/claude状态",
+                "/模型状态            全部模型近 1 小时 Top 10",
                 "/我的ID              查看平台用户 ID / 群 ID",
                 "/用户命令            只显示用户命令",
                 "/芽点帮助            显示完整帮助",
@@ -556,83 +555,159 @@ class FineAPIQQBot(Star):
                 self._user_help_text() + "\n\n管理命令：仅管理员可用"
             )
 
-    @filter.command("模型状态", alias={"模型监控", "模型可用性", "modelstatus"})
-    async def model_status(self, event: AstrMessageEvent):
-        """查看近 30 分钟模型异常状态（排除 4xx，按用户去重）。"""
-        if not self._allowed(event):
+    @filter.event_message_type(filter.EventMessageType.ALL)
+    async def model_status_listener(self, event: AstrMessageEvent):
+        """处理 /<模型>状态 与 /模型状态。"""
+        raw = str(getattr(event, "message_str", "") or "").strip()
+        match = re.search(r"/\s*([^\s/]+?)状态$", raw)
+        if not match:
+            return
+        query = str(match.group(1) or "").strip()
+        if not query or not self._allowed(event):
             return
         if not bool(self._cfg("model_status.enabled", True)):
             yield event.plain_result("模型状态监控未开启。")
+            event.stop_event()
             return
         if bool(self._cfg("model_status.admin_only", False)) and not self._is_admin(event):
             yield event.plain_result("无权限：模型状态仅管理员可用。")
+            event.stop_event()
             return
         await self._ensure_ready()
 
-        cache_seconds = int(self._cfg("model_status.cache_seconds", 60) or 60)
+        cache_seconds = max(0, int(self._cfg("model_status.cache_seconds", 60) or 60))
         now = time.time()
-        if self._model_status_cache and self._model_status_cache[0] > now:
-            yield event.plain_result(self._model_status_cache[1])
+        cache_key = query.lower()
+        cached = self._model_status_cache.get(cache_key)
+        if cached and cached[0] > now:
+            if bool(self._cfg("model_status.image", True)) and cached[3]:
+                yield event.image_result(cached[3])
+            else:
+                yield event.plain_result(cached[2])
+            event.stop_event()
             return
 
-        window_minutes = max(5, int(self._cfg("model_status.window_minutes", 30) or 30))
-        max_pages = max(1, int(self._cfg("model_status.max_pages", 5) or 5))
-        page_size = 100
+        window_minutes = max(5, int(self._cfg("model_status.window_minutes", 60) or 60))
+        max_pages = max(1, int(self._cfg("model_status.max_pages", 10) or 10))
+        min_calls = max(1, int(self._cfg("model_status.min_calls", 5) or 5))
+        top_n = max(1, int(self._cfg("model_status.top_n", 10) or 10))
         end_ts = int(now)
         start_ts = end_ts - window_minutes * 60
 
-        items: list[dict[str, Any]] = []
-        total = 0
         try:
-            for page in range(1, max_pages + 1):
-                payload = await self.client.get_logs(
-                    log_type=5,
-                    start_timestamp=start_ts,
-                    end_timestamp=end_ts,
-                    page=page,
-                    page_size=page_size,
-                )
-                page_items = payload.get("items") or []
-                if isinstance(page_items, list):
-                    items.extend(item for item in page_items if isinstance(item, dict))
-                total = int(payload.get("total") or 0)
-                if len(page_items) < page_size or page * page_size >= total:
-                    break
+            success_logs, _success_total = await self._fetch_log_pages(
+                2, start_ts, end_ts, max_pages
+            )
+            error_logs, error_total = await self._fetch_log_pages(
+                5, start_ts, end_ts, max_pages
+            )
         except NewAPIError as exc:
             hint = "（模型状态需要 PAT 的 log:read 权限）" if exc.status == 403 else ""
             yield event.plain_result(f"查询模型状态失败：{exc.message}{hint}")
+            event.stop_event()
             return
         except Exception:
-            logger.exception("[fineapi] 拉取模型错误日志异常")
+            logger.exception("[fineapi] 拉取模型状态日志异常")
             yield event.plain_result("查询模型状态失败：拉取日志时出现异常。")
+            event.stop_event()
             return
 
-        perf_summary: dict[str, Any] | None = None
+        model_names: list[str] = []
         try:
-            perf_summary = await self.client.get_perf_summary(hours=1)
-        except Exception as exc:  # 性能数据只用于展示，失败不影响状态判定
-            logger.info("[fineapi] 读取性能汇总失败（忽略）：%s", exc)
+            for item in await self.client.get_pricing():
+                name = str(item.get("model_name") or "").strip()
+                if name:
+                    model_names.append(name)
+        except Exception as exc:
+            logger.info("[fineapi] 读取模型价格表失败（忽略）：%s", exc)
+        for item in success_logs + error_logs:
+            if isinstance(item, dict):
+                name = str(item.get("model_name") or "").strip()
+                if name:
+                    model_names.append(name)
 
-        sampled = total > len(items)
-        analysis = analyze_model_status(
-            items,
-            perf_summary=perf_summary,
+        analysis = analyze_hour(
+            success_logs,
+            error_logs,
+            model_names,
+            query,
+            now=end_ts,
             window_minutes=window_minutes,
+            min_calls=min_calls,
+            top_n=top_n,
             exclude_client_errors=bool(
                 self._cfg("model_status.exclude_client_errors", True)
             ),
-            abnormal_users=int(self._cfg("model_status.abnormal_users", 2) or 2),
-            top_n=int(self._cfg("model_status.top_n", 8) or 8),
-            now=end_ts,
-            sampled=sampled,
-            total_error_logs=total,
         )
-        text = render_model_status(
-            analysis, now=end_ts, show_ok=bool(self._cfg("model_status.show_ok", False))
-        )
+        analysis["error_log_total"] = error_total
+        if not analysis.get("models"):
+            if query in {"模型", "全部", "所有"}:
+                yield event.plain_result("近 1 小时暂无模型调用数据。")
+                event.stop_event()
+            elif re.fullmatch(r"[A-Za-z0-9._:+-]+", query):
+                # 只对“看起来像模型名”的查询回复，避免拦截其他插件的 /xxx状态
+                yield event.plain_result(f"未找到匹配「{query}」的模型。")
+                event.stop_event()
+            return
+
+        text, markdown = build_status_text(analysis)
+        image_url: str | None = None
+        if bool(self._cfg("model_status.image", True)):
+            image_url = await self._render_status_image(text)
+
         if cache_seconds > 0:
-            self._model_status_cache = (now + cache_seconds, text)
-        yield event.plain_result(text)
+            self._model_status_cache[cache_key] = (
+                now + cache_seconds,
+                text,
+                markdown,
+                image_url,
+            )
+            if len(self._model_status_cache) > 200:
+                cutoff = now
+                self._model_status_cache = {
+                    key: value
+                    for key, value in self._model_status_cache.items()
+                    if value[0] > cutoff
+                }
+
+        if image_url:
+            yield event.image_result(image_url)
+        else:
+            yield event.plain_result(markdown)
+        event.stop_event()
+
+    async def _fetch_log_pages(
+        self, log_type: int, start_ts: int, end_ts: int, max_pages: int
+    ) -> tuple[list[dict[str, Any]], int]:
+        items: list[dict[str, Any]] = []
+        total = 0
+        page_size = 100
+        for page in range(1, max_pages + 1):
+            payload = await self.client.get_logs(
+                log_type=log_type,
+                start_timestamp=start_ts,
+                end_timestamp=end_ts,
+                page=page,
+                page_size=page_size,
+            )
+            page_items = payload.get("items") or []
+            if isinstance(page_items, list):
+                items.extend(item for item in page_items if isinstance(item, dict))
+            total = int(payload.get("total") or 0)
+            if len(page_items) < page_size or page * page_size >= total:
+                break
+        return items, total
+
+    async def _render_status_image(self, text: str) -> str | None:
+        renderer = getattr(self, "text_to_image", None)
+        if renderer is None:
+            return None
+        try:
+            url = await renderer(text)
+            return str(url) if url else None
+        except Exception:
+            logger.exception("[fineapi] 模型状态文转图失败，回退为文本")
+            return None
 
     # ---------- 抽奖：用户命令 ----------
 
