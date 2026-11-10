@@ -1,0 +1,242 @@
+{
+  "site": {
+    "description": "星芽站点连接",
+    "type": "object",
+    "items": {
+      "base_url": {
+        "description": "站点地址",
+        "type": "string",
+        "default": "https://xingya.site",
+        "hint": "不要以 / 结尾"
+      },
+      "access_token": {
+        "description": "管理员个人访问令牌（PAT）",
+        "type": "string",
+        "default": "",
+        "secret": true,
+        "hint": "在站点后台 → 个人设置 → 安全 → 访问令牌 创建；基础功能需要 user:read + user:write，模型状态需要额外授予 log:read"
+      },
+      "admin_user_id": {
+        "description": "兼容旧版：New-Api-User 头的值",
+        "type": "int",
+        "default": 0,
+        "hint": "rc50 可填 0；旧版 NewAPI 填管理员用户 ID"
+      },
+      "timeout_seconds": {
+        "description": "请求超时（秒）",
+        "type": "int",
+        "default": 10,
+        "slider": { "min": 3, "max": 60, "step": 1 }
+      },
+      "quota_per_unit": {
+        "description": "换算单位：多少 quota = 1 美元",
+        "type": "int",
+        "default": 500000,
+        "hint": "星芽默认 500000；不要随意修改"
+      }
+    }
+  },
+  "binding": {
+    "description": "绑定规则",
+    "type": "object",
+    "items": {
+      "allow_group": {
+        "description": "允许在群聊中绑定",
+        "type": "bool",
+        "default": true
+      },
+      "allow_private": {
+        "description": "允许在私聊中绑定",
+        "type": "bool",
+        "default": true
+      },
+      "block_admin": {
+        "description": "禁止绑定管理员账号（role >= 10）",
+        "type": "bool",
+        "default": true,
+        "hint": "建议开启，避免误绑管理员账号"
+      }
+    }
+  },
+  "gift": {
+    "description": "首绑礼",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "开启首次绑定赠送",
+        "type": "bool",
+        "default": true
+      },
+      "amount_usd": {
+        "description": "赠送金额（美元）",
+        "type": "float",
+        "default": 1.0,
+        "slider": { "min": 0, "max": 20, "step": 0.1 },
+        "hint": "按普通余额发放；1 美元 = 100 芽点 = 500000 quota"
+      }
+    }
+  },
+  "lottery": {
+    "description": "芽点抽奖",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "开启抽奖功能",
+        "type": "bool",
+        "default": true
+      },
+      "default_duration_minutes": {
+        "description": "默认开奖时长（分钟）",
+        "type": "int",
+        "default": 30,
+        "slider": { "min": 1, "max": 1440, "step": 1 }
+      },
+      "default_prize_yadian": {
+        "description": "默认奖品（芽点）",
+        "type": "float",
+        "default": 100,
+        "slider": { "min": 1, "max": 10000, "step": 1 }
+      },
+      "default_winners": {
+        "description": "默认中奖人数",
+        "type": "int",
+        "default": 1,
+        "slider": { "min": 1, "max": 20, "step": 1 }
+      },
+      "max_winners": {
+        "description": "最多中奖人数",
+        "type": "int",
+        "default": 20,
+        "slider": { "min": 1, "max": 100, "step": 1 }
+      },
+      "max_prize_yadian": {
+        "description": "单次奖品上限（芽点）",
+        "type": "float",
+        "default": 10000,
+        "hint": "防止误操作；不限制可填更大的值"
+      },
+      "max_duration_days": {
+        "description": "最长开奖时间（天）",
+        "type": "int",
+        "default": 30,
+        "slider": { "min": 1, "max": 365, "step": 1 }
+      },
+      "auto_draw_interval_seconds": {
+        "description": "自动开奖检查间隔（秒）",
+        "type": "int",
+        "default": 15,
+        "slider": { "min": 5, "max": 120, "step": 5 }
+      }
+    }
+  },
+  "model_status": {
+    "description": "模型状态监控",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "开启 /模型状态",
+        "type": "bool",
+        "default": true
+      },
+      "window_minutes": {
+        "description": "统计窗口（分钟）",
+        "type": "int",
+        "default": 30,
+        "slider": { "min": 5, "max": 180, "step": 5 }
+      },
+      "max_pages": {
+        "description": "最多拉取多少页错误日志（每页 100 条）",
+        "type": "int",
+        "default": 5,
+        "slider": { "min": 1, "max": 20, "step": 1 },
+        "hint": "错误日志很多时只分析最新的一批，输出会标注样本"
+      },
+      "abnormal_users": {
+        "description": "多少个不同用户报错算异常",
+        "type": "int",
+        "default": 2,
+        "slider": { "min": 1, "max": 10, "step": 1 },
+        "hint": "同一用户重复错误只算 1 个用户；设为 1 表示单用户报错也算异常"
+      },
+      "exclude_client_errors": {
+        "description": "排除 400-499 客户端错误",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后只有 5xx / 超时 / 未知错误参与模型状态判定"
+      },
+      "top_n": {
+        "description": "最多显示多少个模型",
+        "type": "int",
+        "default": 8,
+        "slider": { "min": 3, "max": 30, "step": 1 }
+      },
+      "show_ok": {
+        "description": "显示正常模型列表",
+        "type": "bool",
+        "default": false
+      },
+      "admin_only": {
+        "description": "仅管理员可用",
+        "type": "bool",
+        "default": false
+      },
+      "cache_seconds": {
+        "description": "结果缓存（秒）",
+        "type": "int",
+        "default": 60,
+        "slider": { "min": 10, "max": 600, "step": 10 }
+      }
+    }
+  },
+  "access": {
+    "description": "访问控制",
+    "type": "object",
+    "items": {
+      "admin_qqs": {
+        "description": "插件管理员平台用户 ID",
+        "type": "list",
+        "default": [],
+        "hint": "QQ 官方机器人的用户 ID 是 OpenID（不是 QQ 号），建议填管理员私聊时的 C2C OpenID；OneBot/aiocqhttp 下填 QQ 号。可填多个，AstrBot 管理员也自动可用"
+      },
+      "whitelist_groups": {
+        "description": "群白名单",
+        "type": "list",
+        "default": [],
+        "hint": "官方机器人的群 ID 是 group_openid；留空表示所有群可用"
+      },
+      "query_cooldown_seconds": {
+        "description": "余额查询冷却（秒）",
+        "type": "int",
+        "default": 3,
+        "slider": { "min": 0, "max": 60, "step": 1 }
+      }
+    }
+  },
+  "ui": {
+    "description": "显示设置",
+    "type": "object",
+    "items": {
+      "show_yadian": {
+        "description": "同时显示芽点",
+        "type": "bool",
+        "default": true
+      },
+      "show_cny": {
+        "description": "显示人民币换算",
+        "type": "bool",
+        "default": false
+      },
+      "exchange_rate": {
+        "description": "美元兑人民币汇率",
+        "type": "float",
+        "default": 7.2
+      },
+      "private_balance_only": {
+        "description": "余额只能私聊查询",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后群内发送 /余额 会提示私聊"
+      }
+    }
+  }
+}
