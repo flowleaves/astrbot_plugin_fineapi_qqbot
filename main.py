@@ -770,17 +770,9 @@ class FineAPIQQBot(Star):
         try:
             lottery = await self.store.get_open_lottery(umo)
             if not lottery:
-                latest = await self.store.list_lotteries(
-                    umo=umo, status="drawn", limit=1
-                )
-                if latest:
-                    winners = await self.store.list_lottery_winners(
-                        int(latest[0]["id"])
-                    )
-                    yield event.plain_result("当前没有进行中的抽奖。")
-                    yield self._lottery_history_result(event, latest[0], winners)
-                else:
-                    yield event.plain_result("当前没有进行中的抽奖。")
+                # 普通 /抽奖 只提示当前没有抽奖；历史开奖结果只在 /抽奖信息 中展示，
+                # 避免重复 @ 上一场中奖者。
+                yield event.plain_result("当前没有进行中的抽奖。")
                 return
 
             now = int(time.time())
